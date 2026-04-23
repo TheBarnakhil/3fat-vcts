@@ -1,0 +1,37 @@
+# Dependencies
+**/node_modules/
+**/.pnp
+**/.pnp.*
+
+# Next.js build output
+**/.next/
+**/out/
+
+# Android build output
+**/android/.gradle/
+**/android/build/
+**/android/app/build/
+**/android/local.properties
+**/android/.idea/
+**/android/captures/
+**/android/*.iml
+**/android/app/release/
+**/android/app/debug/
+**/google-services.json
+
+# env files
+**/.env
+**/.env.*
+!**/.env.example
+
+# typescript
+**/*.tsbuildinfo
+**/next-env.d.ts
+
+# misc
+.DS_Store
+*.pem
+*.log
+
+# Vercel
+**/.vercel
