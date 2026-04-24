@@ -13,18 +13,34 @@ if (typeof process !== "undefined" && !process.env.__VCTS_ENV_LOADED) {
  * Validated process.env. Fail fast at module load rather than producing
  * confusing runtime errors deeper in the stack.
  */
+// `.default()` only applies when the value is `undefined`, but Vercel and other
+// hosts can materialise an empty string for a configured-but-blank variable.
+// Pre-process to coerce "" (and whitespace-only) to undefined so defaults and
+// `.optional()` behave intuitively.
+const emptyToUndef = (v: unknown) =>
+	typeof v === "string" && v.trim() === "" ? undefined : v;
+
+// jose's `setExpirationTime` accepts formats like "8h", "30d", "15 min", or a
+// number of seconds. Validate here so a bad value fails fast at boot instead
+// of deep inside a signing call.
+const durationSpec = z
+	.string()
+	.regex(/^\d+\s?(s|sec|secs|m|min|mins|h|hr|hrs|d|day|days|w|week|weeks)$/i, {
+		message: "Expected a duration like '8h', '30d', or '15 min'.",
+	});
+
 const EnvSchema = z.object({
 	DATABASE_URL: z.string().url(),
 	DATABASE_URL_UNPOOLED: z.string().url(),
 	JWT_PRIVATE_KEY_BASE64: z.string().min(1),
 	JWT_PUBLIC_KEY_BASE64: z.string().min(1),
-	JWT_ACCESS_EXPIRES_IN: z.string().default("8h"),
-	JWT_REFRESH_EXPIRES_IN: z.string().default("30d"),
+	JWT_ACCESS_EXPIRES_IN: z.preprocess(emptyToUndef, durationSpec.default("8h")),
+	JWT_REFRESH_EXPIRES_IN: z.preprocess(emptyToUndef, durationSpec.default("30d")),
 	PASSWORD_PEPPER: z.string().min(16),
 	AUDIT_HMAC_SECRET: z.string().min(16),
 	APP_DB_PASSWORD: z.string().min(16),
-	MAPS_API_KEY: z.string().min(1).optional(),
-	NEXT_PUBLIC_MAPS_API_KEY: z.string().min(1).optional(),
+	MAPS_API_KEY: z.preprocess(emptyToUndef, z.string().min(1).optional()),
+	NEXT_PUBLIC_MAPS_API_KEY: z.preprocess(emptyToUndef, z.string().min(1).optional()),
 	NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
 });
 
