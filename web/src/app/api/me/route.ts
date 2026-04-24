@@ -1,17 +1,21 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
-import { users } from "@/db/schema";
-import { withTenant } from "@/db/tenant";
+import { tenants, users } from "@/db/schema";
+import { withoutTenant } from "@/db/tenant";
 import { requireAuth } from "@/lib/auth/context";
 import { toResponse } from "@/lib/errors";
 
 export const runtime = "nodejs";
 
+// `users` and `tenants` are AUTH_ONLY tables - the RLS-enforced `vcts_app`
+// role has NO grants on them, so we must run this as `neondb_owner` via
+// `withoutTenant` and apply tenant scoping ourselves with an explicit
+// `auth.tid` predicate.
 export async function GET() {
 	try {
 		const auth = await requireAuth();
-		const me = await withTenant(auth.tid, async (tx) => {
-			const rows = await tx
+		const result = await withoutTenant(async (tx) => {
+			const [userRow] = await tx
 				.select({
 					id: users.id,
 					email: users.email,
@@ -22,11 +26,41 @@ export async function GET() {
 					lastLoginAt: users.lastLoginAt,
 				})
 				.from(users)
-				.where(eq(users.id, auth.sub))
+				.where(and(eq(users.id, auth.sub), eq(users.tenantId, auth.tid)))
 				.limit(1);
-			return rows[0];
+			if (!userRow) return null;
+			const [tenantRow] = await tx
+				.select({
+					id: tenants.id,
+					slug: tenants.slug,
+					name: tenants.name,
+					settings: tenants.settings,
+				})
+				.from(tenants)
+				.where(eq(tenants.id, auth.tid))
+				.limit(1);
+			const settings = (tenantRow?.settings ?? {}) as {
+				accentHsl?: string;
+				logoUrl?: string;
+			};
+			return {
+				user: userRow,
+				tenant: {
+					id: tenantRow?.id,
+					slug: tenantRow?.slug,
+					name: tenantRow?.name,
+					accentHsl: settings.accentHsl ?? null,
+					logoUrl: settings.logoUrl ?? null,
+				},
+			};
 		});
-		return NextResponse.json({ user: me, tenant: { id: auth.tid, slug: auth.tslug } });
+		if (!result) {
+			return NextResponse.json(
+				{ error: { code: "not_found", message: "User no longer exists" } },
+				{ status: 404 },
+			);
+		}
+		return NextResponse.json(result);
 	} catch (err) {
 		return toResponse(err);
 	}

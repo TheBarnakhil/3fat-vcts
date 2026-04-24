@@ -23,6 +23,8 @@ const EnvSchema = z.object({
 	PASSWORD_PEPPER: z.string().min(16),
 	AUDIT_HMAC_SECRET: z.string().min(16),
 	APP_DB_PASSWORD: z.string().min(16),
+	MAPS_API_KEY: z.string().min(1).optional(),
+	NEXT_PUBLIC_MAPS_API_KEY: z.string().min(1).optional(),
 	NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
 });
 

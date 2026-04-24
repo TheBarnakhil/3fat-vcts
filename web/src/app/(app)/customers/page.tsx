@@ -1,0 +1,449 @@
+"use client";
+
+import * as React from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { ColumnDef } from "@tanstack/react-table";
+import { LoaderCircle, MapPin, Plus, Trash2, Users } from "lucide-react";
+import { toast } from "sonner";
+
+import { PageHeader } from "@/components/shell/page-header";
+import { DataTable } from "@/components/shell/data-table";
+import { EmptyState } from "@/components/shell/empty-state";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { CustomerMapPicker } from "@/components/maps/customer-map-picker";
+import { api, isApiError } from "@/lib/api";
+import { useAuthStore } from "@/stores/auth-store";
+import { flipShared } from "@/lib/motion/gsap";
+
+type Customer = {
+  id: string;
+  code: string | null;
+  name: string;
+  address: string | null;
+  phone: string | null;
+  email: string | null;
+  lat: number;
+  lng: number;
+  geofenceRadiusM: number;
+  outstandingBalance: number;
+  assignedAgentId: string | null;
+};
+
+type CustomersResponse = { customers: Customer[] };
+
+const DEFAULT_CENTER = { lat: 12.9716, lng: 77.5946 }; // Bengaluru-ish; overwritten after first save
+
+export default function CustomersPage() {
+  const qc = useQueryClient();
+  const user = useAuthStore((s) => s.user);
+  const canManage = user?.role === "super_admin" || user?.role === "manager";
+  const canDelete = user?.role === "super_admin";
+
+  const [createOpen, setCreateOpen] = React.useState(false);
+  const [editing, setEditing] = React.useState<Customer | null>(null);
+
+  const { data, isLoading } = useQuery<CustomersResponse>({
+    queryKey: ["customers"],
+    queryFn: () => api<CustomersResponse>("/api/customers"),
+  });
+
+  const deleteMut = useMutation({
+    mutationFn: async (id: string) =>
+      api(`/api/customers/${id}`, { method: "DELETE" }),
+    onSuccess: () => {
+      toast.success("Customer deleted");
+      qc.invalidateQueries({ queryKey: ["customers"] });
+    },
+    onError: (err) => {
+      toast.error(isApiError(err) ? err.message : "Delete failed");
+    },
+  });
+
+  const columns = React.useMemo<ColumnDef<Customer, unknown>[]>(
+    () => [
+      {
+        accessorKey: "name",
+        header: "Customer",
+        cell: ({ row }) => (
+          <div>
+            <div className="font-medium">{row.original.name}</div>
+            <div className="text-xs text-muted-foreground">
+              {row.original.code ?? "—"}
+            </div>
+          </div>
+        ),
+      },
+      {
+        accessorKey: "address",
+        header: "Address",
+        cell: ({ row }) => (
+          <span className="line-clamp-1 max-w-sm text-sm text-muted-foreground">
+            {row.original.address ?? "—"}
+          </span>
+        ),
+      },
+      {
+        accessorKey: "phone",
+        header: "Phone",
+        cell: ({ row }) => (
+          <span className="font-mono text-sm">
+            {row.original.phone ?? "—"}
+          </span>
+        ),
+      },
+      {
+        accessorKey: "geofenceRadiusM",
+        header: "Fence",
+        cell: ({ row }) => (
+          <span className="inline-flex items-center gap-1 font-mono text-xs text-muted-foreground">
+            <MapPin className="size-3.5" />
+            {row.original.geofenceRadiusM} m
+          </span>
+        ),
+      },
+      {
+        accessorKey: "outstandingBalance",
+        header: "Outstanding",
+        cell: ({ row }) => (
+          <span className="font-mono text-sm">
+            ₹{row.original.outstandingBalance.toLocaleString()}
+          </span>
+        ),
+      },
+      {
+        id: "actions",
+        header: "",
+        cell: ({ row }) => (
+          <div className="flex justify-end gap-1">
+            {canDelete && (
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (confirm(`Delete ${row.original.name}?`)) {
+                    deleteMut.mutate(row.original.id);
+                  }
+                }}
+                className="text-destructive hover:text-destructive"
+                aria-label="Delete customer"
+              >
+                <Trash2 className="size-4" />
+              </Button>
+            )}
+          </div>
+        ),
+      },
+    ],
+    [canDelete, deleteMut],
+  );
+
+  const rowId = (row: HTMLElement | null) => row?.getAttribute("data-row-key");
+
+  return (
+    <div>
+      <PageHeader
+        title="Customers"
+        description="Customer list with pinned locations and collection geofence."
+        actions={
+          canManage && (
+            <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+              <DialogTrigger asChild>
+                <Button>
+                  <Plus className="size-4" />
+                  New customer
+                </Button>
+              </DialogTrigger>
+              <CustomerDialog
+                mode="create"
+                defaultLocation={
+                  data?.customers[0]
+                    ? {
+                        lat: data.customers[0].lat,
+                        lng: data.customers[0].lng,
+                      }
+                    : DEFAULT_CENTER
+                }
+                onClose={() => setCreateOpen(false)}
+              />
+            </Dialog>
+          )
+        }
+      />
+
+      {!isLoading && (data?.customers ?? []).length === 0 ? (
+        <EmptyState
+          icon={Users}
+          title="No customers yet"
+          description="Add your first customer with a pinned location to start collecting."
+          action={
+            canManage && (
+              <Button onClick={() => setCreateOpen(true)}>
+                <Plus className="size-4" />
+                Add customer
+              </Button>
+            )
+          }
+        />
+      ) : (
+        <div data-customers-table>
+          <DataTable
+            columns={columns}
+            data={data?.customers ?? []}
+            loading={isLoading}
+            getRowId={(r) => r.id}
+            onRowClick={(r) => {
+              // Capture rows for FLIP before mounting the dialog
+              const table = document.querySelector("[data-customers-table]");
+              if (table) {
+                const state = flipShared.capture(
+                  table.querySelectorAll(".vcts-row"),
+                );
+                setEditing(r);
+                requestAnimationFrame(() => flipShared.play(state));
+              } else {
+                setEditing(r);
+              }
+              void rowId;
+            }}
+          />
+        </div>
+      )}
+
+      {/* Edit dialog */}
+      <Dialog
+        open={!!editing}
+        onOpenChange={(o) => {
+          if (!o) setEditing(null);
+        }}
+      >
+        {editing && (
+          <CustomerDialog
+            mode="edit"
+            initial={editing}
+            defaultLocation={{ lat: editing.lat, lng: editing.lng }}
+            onClose={() => setEditing(null)}
+          />
+        )}
+      </Dialog>
+    </div>
+  );
+}
+
+function CustomerDialog({
+  mode,
+  initial,
+  defaultLocation,
+  onClose,
+}: {
+  mode: "create" | "edit";
+  initial?: Customer;
+  defaultLocation: { lat: number; lng: number };
+  onClose: () => void;
+}) {
+  const qc = useQueryClient();
+  const [form, setForm] = React.useState({
+    code: initial?.code ?? "",
+    name: initial?.name ?? "",
+    address: initial?.address ?? "",
+    phone: initial?.phone ?? "",
+    email: initial?.email ?? "",
+    lat: initial?.lat ?? defaultLocation.lat,
+    lng: initial?.lng ?? defaultLocation.lng,
+    geofenceRadiusM: initial?.geofenceRadiusM ?? 100,
+    outstandingBalance: initial?.outstandingBalance ?? 0,
+  });
+
+  const mutation = useMutation({
+    mutationFn: async () => {
+      const payload = {
+        code: form.code || null,
+        name: form.name,
+        address: form.address || null,
+        phone: form.phone || null,
+        email: form.email || null,
+        lat: Number(form.lat),
+        lng: Number(form.lng),
+        geofenceRadiusM: Number(form.geofenceRadiusM),
+        outstandingBalance: Number(form.outstandingBalance),
+      };
+      return mode === "create"
+        ? api("/api/customers", {
+            method: "POST",
+            body: JSON.stringify(payload),
+          })
+        : api(`/api/customers/${initial!.id}`, {
+            method: "PATCH",
+            body: JSON.stringify(payload),
+          });
+    },
+    onSuccess: () => {
+      toast.success(mode === "create" ? "Customer created" : "Customer updated");
+      qc.invalidateQueries({ queryKey: ["customers"] });
+      onClose();
+    },
+    onError: (err) => {
+      toast.error(isApiError(err) ? err.message : "Save failed");
+    },
+  });
+
+  return (
+    <DialogContent className="sm:max-w-[720px]">
+      <DialogHeader>
+        <DialogTitle>
+          {mode === "create" ? "Create customer" : `Edit ${initial?.name}`}
+        </DialogTitle>
+        <DialogDescription>
+          Pin the exact location where collections must happen. The geofence
+          radius controls how strict the GPS gate is in the field.
+        </DialogDescription>
+      </DialogHeader>
+
+      <form
+        className="grid gap-5 md:grid-cols-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          mutation.mutate();
+        }}
+      >
+        <div className="space-y-4 md:col-span-1">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-2 col-span-2">
+              <Label htmlFor="c-name">Name</Label>
+              <Input
+                id="c-name"
+                required
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="c-code">Code</Label>
+              <Input
+                id="c-code"
+                value={form.code}
+                onChange={(e) => setForm({ ...form, code: e.target.value })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="c-phone">Phone</Label>
+              <Input
+                id="c-phone"
+                value={form.phone}
+                onChange={(e) => setForm({ ...form, phone: e.target.value })}
+              />
+            </div>
+            <div className="space-y-2 col-span-2">
+              <Label htmlFor="c-address">Address</Label>
+              <Input
+                id="c-address"
+                value={form.address}
+                onChange={(e) => setForm({ ...form, address: e.target.value })}
+              />
+            </div>
+            <div className="space-y-2 col-span-2">
+              <Label htmlFor="c-email">Email (optional)</Label>
+              <Input
+                id="c-email"
+                type="email"
+                value={form.email}
+                onChange={(e) => setForm({ ...form, email: e.target.value })}
+              />
+            </div>
+            <div className="space-y-2 col-span-2">
+              <Label htmlFor="c-outstanding">Outstanding balance (₹)</Label>
+              <Input
+                id="c-outstanding"
+                type="number"
+                inputMode="decimal"
+                step="0.01"
+                value={form.outstandingBalance}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    outstandingBalance: Number(e.target.value),
+                  })
+                }
+              />
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label htmlFor="c-radius">Geofence radius</Label>
+              <span className="font-mono text-sm tabular-nums">
+                {form.geofenceRadiusM} m
+              </span>
+            </div>
+            <input
+              id="c-radius"
+              type="range"
+              min={50}
+              max={500}
+              step={10}
+              value={form.geofenceRadiusM}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  geofenceRadiusM: Number(e.target.value),
+                })
+              }
+              className="w-full accent-[hsl(var(--primary))]"
+            />
+            <p className="text-xs text-muted-foreground">
+              Agent must be inside this radius to log a collection.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2 rounded-md border bg-muted/30 px-3 py-2 text-xs font-mono">
+            <span className="text-muted-foreground">lat</span>
+            <span className="tabular-nums">{form.lat.toFixed(6)}</span>
+            <span className="ml-3 text-muted-foreground">lng</span>
+            <span className="tabular-nums">{form.lng.toFixed(6)}</span>
+          </div>
+        </div>
+
+        <div className="space-y-2 md:col-span-1">
+          <Label>Pin location</Label>
+          <CustomerMapPicker
+            value={{ lat: form.lat, lng: form.lng }}
+            radiusM={form.geofenceRadiusM}
+            address={form.address}
+            onAddressChange={(a) => setForm((f) => ({ ...f, address: a }))}
+            onChange={(p) =>
+              setForm((f) => ({ ...f, lat: p.lat, lng: p.lng }))
+            }
+          />
+        </div>
+
+        <DialogFooter className="md:col-span-2">
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={onClose}
+            disabled={mutation.isPending}
+          >
+            Cancel
+          </Button>
+          <Button type="submit" disabled={mutation.isPending}>
+            {mutation.isPending && (
+              <LoaderCircle className="size-4 animate-spin" />
+            )}
+            {mode === "create" ? "Create customer" : "Save changes"}
+          </Button>
+        </DialogFooter>
+      </form>
+    </DialogContent>
+  );
+}
