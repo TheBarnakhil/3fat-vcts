@@ -47,12 +47,7 @@ const NAV: readonly NavItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/agents", label: "Agents", icon: UsersRound },
   { href: "/customers", label: "Customers", icon: Users },
-  {
-    href: "/collections",
-    label: "Collections",
-    icon: ReceiptText,
-    comingSoon: true,
-  },
+  { href: "/collections", label: "Collections", icon: ReceiptText },
   { href: "/map", label: "Live map", icon: MapPin, comingSoon: true },
   { href: "/audit", label: "Audit", icon: ShieldCheck, comingSoon: true },
 ];

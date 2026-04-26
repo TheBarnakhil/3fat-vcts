@@ -133,6 +133,53 @@ async function applyRls(): Promise<void> {
 	}
 }
 
+async function applyReceiptSequence(): Promise<void> {
+	// Atomic "give me the next receipt sequence" function. Runs as the table
+	// owner (neondb_owner) and uses INSERT ... ON CONFLICT DO UPDATE to read +
+	// increment in a single statement. SECURITY DEFINER lets vcts_app call it
+	// even though it has no rights on the underlying counter rows for tenants
+	// other than its own; the SET app.tenant_id check inside guarantees we
+	// never bump another tenant's counter.
+	await exec(`
+		CREATE OR REPLACE FUNCTION next_receipt_seq(
+			p_tenant_id uuid,
+			p_agent_id uuid,
+			p_fiscal_year integer
+		) RETURNS integer
+		LANGUAGE plpgsql
+		SECURITY DEFINER
+		SET search_path = public
+		AS $$
+		DECLARE
+			v_setting text := nullif(current_setting('app.tenant_id', true), '');
+			v_seq integer;
+		BEGIN
+			-- If the caller has a tenant context (i.e. came in via vcts_app),
+			-- enforce it; auth-only paths (neondb_owner) won't have one set
+			-- and are allowed through (used by seeds).
+			IF v_setting IS NOT NULL AND v_setting::uuid <> p_tenant_id THEN
+				RAISE EXCEPTION 'tenant mismatch: app.tenant_id=% != p_tenant_id=%',
+					v_setting, p_tenant_id
+					USING ERRCODE = 'insufficient_privilege';
+			END IF;
+
+			INSERT INTO receipt_counters (tenant_id, agent_id, fiscal_year, next_seq)
+			VALUES (p_tenant_id, p_agent_id, p_fiscal_year, 2)
+			ON CONFLICT (tenant_id, agent_id, fiscal_year) DO UPDATE
+				SET next_seq = receipt_counters.next_seq + 1
+			RETURNING next_seq - 1 INTO v_seq;
+
+			RETURN v_seq;
+		END;
+		$$;
+	`);
+
+	await exec(
+		`GRANT EXECUTE ON FUNCTION next_receipt_seq(uuid, uuid, integer) TO vcts_app`,
+	);
+	console.log("  [ok] function next_receipt_seq()");
+}
+
 async function main() {
 	console.log("Provisioning vcts_app role...");
 	await ensureAppRole();
@@ -140,6 +187,9 @@ async function main() {
 
 	console.log("\nApplying RLS policies...");
 	await applyRls();
+
+	console.log("\nApplying helper SQL functions...");
+	await applyReceiptSequence();
 
 	console.log("\nDone. Runtime connections should use APP_DATABASE_URL");
 	console.log("(constructed automatically by src/db/client.ts from DATABASE_URL + APP_DB_PASSWORD).");

@@ -42,6 +42,24 @@ const EnvSchema = z.object({
 	MAPS_API_KEY: z.preprocess(emptyToUndef, z.string().min(1).optional()),
 	NEXT_PUBLIC_MAPS_API_KEY: z.preprocess(emptyToUndef, z.string().min(1).optional()),
 	NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
+
+	// --- R2 / receipts (Phase 3). Optional in dev; if all four core values are
+	// present we upload to R2, otherwise we stream PDFs straight from the API.
+	R2_ACCOUNT_ID: z.preprocess(emptyToUndef, z.string().min(1).optional()),
+	R2_ACCESS_KEY_ID: z.preprocess(emptyToUndef, z.string().min(1).optional()),
+	R2_SECRET_ACCESS_KEY: z.preprocess(emptyToUndef, z.string().min(1).optional()),
+	R2_BUCKET: z.preprocess(emptyToUndef, z.string().min(1).optional()),
+	R2_PUBLIC_BASE_URL: z.preprocess(emptyToUndef, z.string().url().optional()),
+
+	// --- Upstash Redis (used for per-tenant rate limiting). If absent we
+	// degrade to in-memory limiting in dev and a no-op warning in prod.
+	UPSTASH_REDIS_KV_REST_API_URL: z.preprocess(emptyToUndef, z.string().url().optional()),
+	UPSTASH_REDIS_KV_REST_API_TOKEN: z.preprocess(emptyToUndef, z.string().min(1).optional()),
+
+	// --- Collections tuning (overridable per environment)
+	COLLECTIONS_RATE_PER_MIN: z.coerce.number().int().min(1).max(120).default(10),
+	GPS_MAX_ACCURACY_M: z.coerce.number().min(5).max(500).default(50),
+	RECEIPT_PRESIGN_TTL_SECONDS: z.coerce.number().int().min(60).max(86400).default(900),
 });
 
 function load(): z.infer<typeof EnvSchema> {
