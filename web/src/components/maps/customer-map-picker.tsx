@@ -25,6 +25,8 @@ interface Props {
   address?: string;
   onAddressChange?: (address: string) => void;
   apiKey?: string;
+  /** When true, hides the search box and ignores map clicks. Used in view-only mode. */
+  readOnly?: boolean;
 }
 
 export function CustomerMapPicker({
@@ -34,6 +36,7 @@ export function CustomerMapPicker({
   address,
   onAddressChange,
   apiKey,
+  readOnly = false,
 }: Props) {
   const key = apiKey ?? process.env.NEXT_PUBLIC_MAPS_API_KEY ?? "";
   const { resolvedTheme } = useTheme();
@@ -51,13 +54,15 @@ export function CustomerMapPicker({
   return (
     <APIProvider apiKey={key}>
       <div className="space-y-3">
-        <GeocodeSearch
-          defaultValue={address}
-          onPick={(p) => {
-            onChange({ lat: p.lat, lng: p.lng });
-            onAddressChange?.(p.label);
-          }}
-        />
+        {!readOnly && (
+          <GeocodeSearch
+            defaultValue={address}
+            onPick={(p) => {
+              onChange({ lat: p.lat, lng: p.lng });
+              onAddressChange?.(p.label);
+            }}
+          />
+        )}
         <div className="relative h-[320px] w-full overflow-hidden rounded-lg border">
           <Map
             key={resolvedTheme}
@@ -68,13 +73,17 @@ export function CustomerMapPicker({
             disableDefaultUI={false}
             mapId="vcts-customer-picker"
             colorScheme={resolvedTheme === "dark" ? "DARK" : "LIGHT"}
-            onClick={(e) => {
-              if (!e.detail.latLng) return;
-              onChange({
-                lat: e.detail.latLng.lat,
-                lng: e.detail.latLng.lng,
-              });
-            }}
+            onClick={
+              readOnly
+                ? undefined
+                : (e) => {
+                    if (!e.detail.latLng) return;
+                    onChange({
+                      lat: e.detail.latLng.lat,
+                      lng: e.detail.latLng.lng,
+                    });
+                  }
+            }
           >
             <AdvancedMarker position={value}>
               <Pin
@@ -86,10 +95,12 @@ export function CustomerMapPicker({
             <FenceCircle center={value} radiusM={radiusM} />
           </Map>
         </div>
-        <p className="text-xs text-muted-foreground">
-          Tap anywhere on the map to move the pin. Use search to jump to an
-          address.
-        </p>
+        {!readOnly && (
+          <p className="text-xs text-muted-foreground">
+            Tap anywhere on the map to move the pin. Use search to jump to an
+            address.
+          </p>
+        )}
       </div>
     </APIProvider>
   );

@@ -221,7 +221,7 @@ export default function CustomersPage() {
         </div>
       )}
 
-      {/* Edit dialog */}
+      {/* Detail / edit dialog. Agents + auditors land in read-only view. */}
       <Dialog
         open={!!editing}
         onOpenChange={(o) => {
@@ -230,7 +230,7 @@ export default function CustomersPage() {
       >
         {editing && (
           <CustomerDialog
-            mode="edit"
+            mode={canManage ? "edit" : "view"}
             initial={editing}
             defaultLocation={{ lat: editing.lat, lng: editing.lng }}
             onClose={() => setEditing(null)}
@@ -247,12 +247,13 @@ function CustomerDialog({
   defaultLocation,
   onClose,
 }: {
-  mode: "create" | "edit";
+  mode: "create" | "edit" | "view";
   initial?: Customer;
   defaultLocation: { lat: number; lng: number };
   onClose: () => void;
 }) {
   const qc = useQueryClient();
+  const readOnly = mode === "view";
   const [form, setForm] = React.useState({
     code: initial?.code ?? "",
     name: initial?.name ?? "",
@@ -302,11 +303,16 @@ function CustomerDialog({
     <DialogContent className="sm:max-w-[720px]">
       <DialogHeader>
         <DialogTitle>
-          {mode === "create" ? "Create customer" : `Edit ${initial?.name}`}
+          {mode === "create"
+            ? "Create customer"
+            : mode === "edit"
+              ? `Edit ${initial?.name}`
+              : initial?.name}
         </DialogTitle>
         <DialogDescription>
-          Pin the exact location where collections must happen. The geofence
-          radius controls how strict the GPS gate is in the field.
+          {readOnly
+            ? "Customer details and the geofence agents must be inside to log a collection. Read-only for your role."
+            : "Pin the exact location where collections must happen. The geofence radius controls how strict the GPS gate is in the field."}
         </DialogDescription>
       </DialogHeader>
 
@@ -314,134 +320,157 @@ function CustomerDialog({
         className="grid gap-5 md:grid-cols-2"
         onSubmit={(e) => {
           e.preventDefault();
+          if (readOnly) return;
           mutation.mutate();
         }}
       >
-        <div className="space-y-4 md:col-span-1">
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-2 col-span-2">
-              <Label htmlFor="c-name">Name</Label>
-              <Input
-                id="c-name"
-                required
-                value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
-              />
+        <fieldset disabled={readOnly} className="contents">
+          <div className="space-y-4 md:col-span-1">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2 col-span-2">
+                <Label htmlFor="c-name">Name</Label>
+                <Input
+                  id="c-name"
+                  required
+                  readOnly={readOnly}
+                  value={form.name}
+                  onChange={(e) => setForm({ ...form, name: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="c-code">Code</Label>
+                <Input
+                  id="c-code"
+                  readOnly={readOnly}
+                  value={form.code}
+                  onChange={(e) => setForm({ ...form, code: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="c-phone">Phone</Label>
+                <Input
+                  id="c-phone"
+                  readOnly={readOnly}
+                  value={form.phone}
+                  onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2 col-span-2">
+                <Label htmlFor="c-address">Address</Label>
+                <Input
+                  id="c-address"
+                  readOnly={readOnly}
+                  value={form.address}
+                  onChange={(e) =>
+                    setForm({ ...form, address: e.target.value })
+                  }
+                />
+              </div>
+              <div className="space-y-2 col-span-2">
+                <Label htmlFor="c-email">Email (optional)</Label>
+                <Input
+                  id="c-email"
+                  type="email"
+                  readOnly={readOnly}
+                  value={form.email}
+                  onChange={(e) => setForm({ ...form, email: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2 col-span-2">
+                <Label htmlFor="c-outstanding">Outstanding balance (₹)</Label>
+                <Input
+                  id="c-outstanding"
+                  type="number"
+                  inputMode="decimal"
+                  step="0.01"
+                  readOnly={readOnly}
+                  value={form.outstandingBalance}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      outstandingBalance: Number(e.target.value),
+                    })
+                  }
+                />
+              </div>
             </div>
+
             <div className="space-y-2">
-              <Label htmlFor="c-code">Code</Label>
-              <Input
-                id="c-code"
-                value={form.code}
-                onChange={(e) => setForm({ ...form, code: e.target.value })}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="c-phone">Phone</Label>
-              <Input
-                id="c-phone"
-                value={form.phone}
-                onChange={(e) => setForm({ ...form, phone: e.target.value })}
-              />
-            </div>
-            <div className="space-y-2 col-span-2">
-              <Label htmlFor="c-address">Address</Label>
-              <Input
-                id="c-address"
-                value={form.address}
-                onChange={(e) => setForm({ ...form, address: e.target.value })}
-              />
-            </div>
-            <div className="space-y-2 col-span-2">
-              <Label htmlFor="c-email">Email (optional)</Label>
-              <Input
-                id="c-email"
-                type="email"
-                value={form.email}
-                onChange={(e) => setForm({ ...form, email: e.target.value })}
-              />
-            </div>
-            <div className="space-y-2 col-span-2">
-              <Label htmlFor="c-outstanding">Outstanding balance (₹)</Label>
-              <Input
-                id="c-outstanding"
-                type="number"
-                inputMode="decimal"
-                step="0.01"
-                value={form.outstandingBalance}
+              <div className="flex items-center justify-between">
+                <Label htmlFor="c-radius">Geofence radius</Label>
+                <span className="font-mono text-sm tabular-nums">
+                  {form.geofenceRadiusM} m
+                </span>
+              </div>
+              <input
+                id="c-radius"
+                type="range"
+                min={50}
+                max={500}
+                step={10}
+                disabled={readOnly}
+                value={form.geofenceRadiusM}
                 onChange={(e) =>
                   setForm({
                     ...form,
-                    outstandingBalance: Number(e.target.value),
+                    geofenceRadiusM: Number(e.target.value),
                   })
                 }
+                className="w-full accent-primary disabled:cursor-not-allowed disabled:opacity-60"
               />
+              <p className="text-xs text-muted-foreground">
+                {readOnly
+                  ? "Agents must be inside this radius to log a collection."
+                  : "Agent must be inside this radius to log a collection."}
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2 rounded-md border bg-muted/30 px-3 py-2 text-xs font-mono">
+              <span className="text-muted-foreground">lat</span>
+              <span className="tabular-nums">{form.lat.toFixed(6)}</span>
+              <span className="ml-3 text-muted-foreground">lng</span>
+              <span className="tabular-nums">{form.lng.toFixed(6)}</span>
             </div>
           </div>
 
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <Label htmlFor="c-radius">Geofence radius</Label>
-              <span className="font-mono text-sm tabular-nums">
-                {form.geofenceRadiusM} m
-              </span>
-            </div>
-            <input
-              id="c-radius"
-              type="range"
-              min={50}
-              max={500}
-              step={10}
-              value={form.geofenceRadiusM}
-              onChange={(e) =>
-                setForm({
-                  ...form,
-                  geofenceRadiusM: Number(e.target.value),
-                })
+          <div className="space-y-2 md:col-span-1">
+            <Label>{readOnly ? "Pinned location" : "Pin location"}</Label>
+            <CustomerMapPicker
+              value={{ lat: form.lat, lng: form.lng }}
+              radiusM={form.geofenceRadiusM}
+              address={form.address}
+              readOnly={readOnly}
+              onAddressChange={(a) => setForm((f) => ({ ...f, address: a }))}
+              onChange={(p) =>
+                setForm((f) => ({ ...f, lat: p.lat, lng: p.lng }))
               }
-              className="w-full accent-[hsl(var(--primary))]"
             />
-            <p className="text-xs text-muted-foreground">
-              Agent must be inside this radius to log a collection.
-            </p>
           </div>
-
-          <div className="flex items-center gap-2 rounded-md border bg-muted/30 px-3 py-2 text-xs font-mono">
-            <span className="text-muted-foreground">lat</span>
-            <span className="tabular-nums">{form.lat.toFixed(6)}</span>
-            <span className="ml-3 text-muted-foreground">lng</span>
-            <span className="tabular-nums">{form.lng.toFixed(6)}</span>
-          </div>
-        </div>
-
-        <div className="space-y-2 md:col-span-1">
-          <Label>Pin location</Label>
-          <CustomerMapPicker
-            value={{ lat: form.lat, lng: form.lng }}
-            radiusM={form.geofenceRadiusM}
-            address={form.address}
-            onAddressChange={(a) => setForm((f) => ({ ...f, address: a }))}
-            onChange={(p) =>
-              setForm((f) => ({ ...f, lat: p.lat, lng: p.lng }))
-            }
-          />
-        </div>
+        </fieldset>
 
         <DialogFooter className="md:col-span-2">
-          <Button
-            type="button"
-            variant="ghost"
-            onClick={onClose}
-            disabled={mutation.isPending}
-          >
-            Cancel
-          </Button>
-          <Button type="submit" disabled={mutation.isPending}>
-            {mutation.isPending && (
-              <LoaderCircle className="size-4 animate-spin" />
-            )}
-            {mode === "create" ? "Create customer" : "Save changes"}
-          </Button>
+          {readOnly ? (
+            <Button type="button" onClick={onClose}>
+              Close
+            </Button>
+          ) : (
+            <>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={onClose}
+                disabled={mutation.isPending}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={mutation.isPending}>
+                {mutation.isPending && (
+                  <LoaderCircle className="size-4 animate-spin" />
+                )}
+                {mode === "create" ? "Create customer" : "Save changes"}
+              </Button>
+            </>
+          )}
         </DialogFooter>
       </form>
     </DialogContent>
