@@ -41,6 +41,15 @@ type Customer = {
 };
 
 type CustomersResponse = { customers: Customer[] };
+type Agent = {
+  id: string;
+  name: string;
+  email: string;
+  role: "agent" | "manager" | "super_admin" | "auditor";
+  agentCode: string | null;
+  isActive: boolean;
+};
+type AgentsResponse = { agents: Agent[] };
 
 const DEFAULT_CENTER = { lat: 12.9716, lng: 77.5946 }; // Bengaluru-ish; overwritten after first save
 
@@ -57,6 +66,20 @@ export default function CustomersPage() {
     queryKey: ["customers"],
     queryFn: () => api<CustomersResponse>("/api/customers"),
   });
+
+  const { data: agentsData } = useQuery<AgentsResponse>({
+    queryKey: ["agents"],
+    queryFn: () => api<AgentsResponse>("/api/agents"),
+    enabled: canManage,
+  });
+  const assignableAgents = React.useMemo(
+    () => (agentsData?.agents ?? []).filter((a) => a.role === "agent" && a.isActive),
+    [agentsData],
+  );
+  const agentsById = React.useMemo(
+    () => new Map((agentsData?.agents ?? []).map((a) => [a.id, a])),
+    [agentsData],
+  );
 
   const deleteMut = useMutation({
     mutationFn: async (id: string) =>
@@ -122,6 +145,29 @@ export default function CustomersPage() {
         ),
       },
       {
+        accessorKey: "assignedAgentId",
+        header: "Assigned agent",
+        cell: ({ row }) => {
+          const agentId = row.original.assignedAgentId;
+          const agent = agentId ? agentsById.get(agentId) : null;
+          const label =
+            agent?.name ??
+            (agentId && agentId === user?.id
+              ? "Assigned to you"
+              : agentId
+                ? "Assigned"
+                : "Unassigned");
+          return (
+            <span className="text-sm text-muted-foreground">
+              {label}
+              {agent?.agentCode ? (
+                <span className="ml-1 font-mono text-xs">({agent.agentCode})</span>
+              ) : null}
+            </span>
+          );
+        },
+      },
+      {
         id: "actions",
         header: "",
         cell: ({ row }) => (
@@ -146,7 +192,7 @@ export default function CustomersPage() {
         ),
       },
     ],
-    [canDelete, deleteMut],
+    [agentsById, canDelete, deleteMut, user?.id],
   );
 
   const rowId = (row: HTMLElement | null) => row?.getAttribute("data-row-key");
@@ -167,6 +213,7 @@ export default function CustomersPage() {
               </DialogTrigger>
               <CustomerDialog
                 mode="create"
+                assignableAgents={assignableAgents}
                 defaultLocation={
                   data?.customers[0]
                     ? {
@@ -232,6 +279,7 @@ export default function CustomersPage() {
           <CustomerDialog
             mode={canManage ? "edit" : "view"}
             initial={editing}
+            assignableAgents={assignableAgents}
             defaultLocation={{ lat: editing.lat, lng: editing.lng }}
             onClose={() => setEditing(null)}
           />
@@ -244,11 +292,13 @@ export default function CustomersPage() {
 function CustomerDialog({
   mode,
   initial,
+  assignableAgents,
   defaultLocation,
   onClose,
 }: {
   mode: "create" | "edit" | "view";
   initial?: Customer;
+  assignableAgents: Agent[];
   defaultLocation: { lat: number; lng: number };
   onClose: () => void;
 }) {
@@ -264,6 +314,7 @@ function CustomerDialog({
     lng: initial?.lng ?? defaultLocation.lng,
     geofenceRadiusM: initial?.geofenceRadiusM ?? 100,
     outstandingBalance: initial?.outstandingBalance ?? 0,
+    assignedAgentId: initial?.assignedAgentId ?? "",
   });
 
   const mutation = useMutation({
@@ -278,6 +329,7 @@ function CustomerDialog({
         lng: Number(form.lng),
         geofenceRadiusM: Number(form.geofenceRadiusM),
         outstandingBalance: Number(form.outstandingBalance),
+        assignedAgentId: form.assignedAgentId || null,
       };
       return mode === "create"
         ? api("/api/customers", {
@@ -392,6 +444,35 @@ function CustomerDialog({
                     })
                   }
                 />
+              </div>
+              <div className="space-y-2 col-span-2">
+                <Label htmlFor="c-assigned-agent">Assigned agent</Label>
+                {readOnly ? (
+                  <div className="rounded-md border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
+                    {initial?.assignedAgentId ? "Assigned to you" : "Unassigned"}
+                  </div>
+                ) : (
+                  <select
+                    id="c-assigned-agent"
+                    value={form.assignedAgentId}
+                    onChange={(e) =>
+                      setForm({ ...form, assignedAgentId: e.target.value })
+                    }
+                    className="h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none ring-offset-background disabled:cursor-not-allowed disabled:opacity-60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  >
+                    <option value="">Unassigned</option>
+                    {assignableAgents.map((agent) => (
+                      <option key={agent.id} value={agent.id}>
+                        {agent.name}
+                        {agent.agentCode ? ` (${agent.agentCode})` : ""}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  Only the assigned field agent will see this store in the
+                  Android app or be allowed to record a collection.
+                </p>
               </div>
             </div>
 

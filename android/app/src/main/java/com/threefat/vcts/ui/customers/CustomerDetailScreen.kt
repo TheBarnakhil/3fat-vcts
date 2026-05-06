@@ -160,6 +160,21 @@ private fun DetailBody(
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
                     Text(
+                        text = stringResource(R.string.customer_assignment),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Text(
+                        text = stringResource(R.string.customers_assigned_to_you),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Medium,
+                    )
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text(
                         text = stringResource(R.string.customer_radius),
                         style = MaterialTheme.typography.bodyMedium,
                     )

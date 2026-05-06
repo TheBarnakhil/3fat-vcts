@@ -52,7 +52,7 @@ class CollectionsPushDrainer @Inject constructor(
      * remaining size.
      */
     suspend fun drainOnce(): PushSummary {
-        val pending = queueDao.nextBatch(BATCH_SIZE)
+        val pending = queueDao.nextBatch(BATCH_SIZE, MAX_ATTEMPTS)
             .filter { it.payloadType == SyncQueueEntity.PAYLOAD_COLLECTION_CREATE }
         if (pending.isEmpty()) {
             return PushSummary(0, 0, 0, 0, 0, 0)
@@ -203,5 +203,6 @@ class CollectionsPushDrainer @Inject constructor(
     companion object {
         /** Mirrors the server's MAX_BATCH cap. */
         const val BATCH_SIZE = 50
+        const val MAX_ATTEMPTS = 10
     }
 }

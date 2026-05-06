@@ -1,3 +1,4 @@
+import { eq } from "drizzle-orm";
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 
@@ -46,6 +47,11 @@ export async function GET() {
           createdAt: customers.createdAt,
         })
         .from(customers)
+        .where(
+          auth.role === "agent"
+            ? eq(customers.assignedAgentId, auth.sub)
+            : undefined,
+        )
         .orderBy(customers.name);
     });
     return NextResponse.json({ customers: rows });

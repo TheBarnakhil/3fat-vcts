@@ -33,6 +33,7 @@
     <string name="customers_pull_to_refresh">Pull to refresh</string>
     <string name="customers_empty_title">No customers yet</string>
     <string name="customers_empty_subtitle">Pull to refresh to fetch your assignments.</string>
+    <string name="customers_assigned_to_you">Assigned to you</string>
     <string name="customers_distance_unknown">Location unavailable</string>
     <string name="customers_outstanding">Outstanding</string>
     <string name="customers_load_failed">Couldn\'t reach the server. Showing the cached list.</string>
@@ -41,6 +42,7 @@
     <string name="customer_detail_title">Customer</string>
     <string name="customer_outstanding">Outstanding balance</string>
     <string name="customer_radius">Geofence radius</string>
+    <string name="customer_assignment">Assignment</string>
     <string name="customer_distance_inside">You are %1$dm away · inside the fence</string>
     <string name="customer_distance_outside">You are %1$dm away · move to within %2$dm</string>
     <string name="customer_accuracy_warning">GPS accuracy is %1$dm. Submission requires ≤ %2$dm. Move to open sky.</string>
@@ -86,6 +88,7 @@
     <string name="queue_status_in_flight">Syncing…</string>
     <string name="queue_status_failed">Failed</string>
     <string name="queue_retry_all">Retry all</string>
+    <string name="queue_discard">Discard from queue</string>
     <string name="queue_attempt_count">%1$d attempts</string>
     <string name="queue_last_synced">Last sync: %1$s</string>
     <string name="queue_never_synced">Last sync: never</string>

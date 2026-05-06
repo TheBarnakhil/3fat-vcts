@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CloudDone
+import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material3.Button
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -55,11 +56,9 @@ import java.util.Date
  * which dedupes against any in-flight worker, so spamming the button
  * doesn't fan out to dozens of POSTs.
  *
- * The list itself is intentionally read-only - we don't expose
- * destructive actions (delete row, edit body) here. Phase 10's
- * hardening pass will add a "discard rejected" button gated behind a
- * confirm dialog; for now stuck rows are diagnostics, not garbage to
- * sweep.
+ * Permanently rejected rows, or rows that hit the retry ceiling, expose a
+ * discard action that removes both the queue entry and the optimistic
+ * local collection row.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -88,7 +87,12 @@ fun OfflineQueueScreen(
         },
         containerColor = MaterialTheme.colorScheme.background,
     ) { padding ->
-        Body(padding = padding, state = state, onRetryAll = viewModel::onRetryAllClicked)
+        Body(
+            padding = padding,
+            state = state,
+            onRetryAll = viewModel::onRetryAllClicked,
+            onDiscard = viewModel::onDiscardClicked,
+        )
     }
 }
 
@@ -97,6 +101,7 @@ private fun Body(
     padding: PaddingValues,
     state: OfflineQueueUiState,
     onRetryAll: () -> Unit,
+    onDiscard: (String) -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -120,7 +125,7 @@ private fun Body(
             }
             LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 items(state.rows, key = { it.clientUuid }) { row ->
-                    QueueRowCard(row = row)
+                    QueueRowCard(row = row, onDiscard = { onDiscard(row.clientUuid) })
                 }
             }
         }
@@ -194,7 +199,7 @@ private fun EmptyState() {
 }
 
 @Composable
-private fun QueueRowCard(row: OfflineQueueRow) {
+private fun QueueRowCard(row: OfflineQueueRow, onDiscard: () -> Unit) {
     // Subtle entrance so the list doesn't feel static when WorkManager
     // flips a row's status under the user.
     androidx.compose.animation.AnimatedVisibility(
@@ -265,6 +270,20 @@ private fun QueueRowCard(row: OfflineQueueRow) {
                                 )
                             }
                         }
+                    }
+                }
+                if (row.canDiscard) {
+                    Button(
+                        onClick = onDiscard,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = MaterialTheme.shapes.medium,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.DeleteOutline,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Text(stringResource(R.string.queue_discard))
                     }
                 }
             }

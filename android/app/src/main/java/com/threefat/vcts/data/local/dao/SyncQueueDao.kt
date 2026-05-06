@@ -12,8 +12,9 @@ import kotlinx.coroutines.flow.Flow
  * The drain order is FIFO by `enqueued_at`; we deliberately do NOT use a
  * separate priority column because the agent's mental model is "I made
  * three collections in this order, the receipts should sync in that order
- * too". Failed rows stay at the head until they're either retried
- * successfully or manually dismissed from the queue UI.
+ * too". Failed rows are terminal and stay visible until the agent
+ * discards them from the queue UI; pending rows stop draining after the
+ * worker's max-attempt threshold.
  */
 @Dao
 interface SyncQueueDao {
@@ -36,12 +37,13 @@ interface SyncQueueDao {
     @Query(
         """
         SELECT * FROM sync_queue
-        WHERE status IN ('pending', 'failed')
+        WHERE status = 'pending'
+          AND attempts < :maxAttempts
         ORDER BY enqueued_at ASC
         LIMIT :limit
         """,
     )
-    suspend fun nextBatch(limit: Int): List<SyncQueueEntity>
+    suspend fun nextBatch(limit: Int, maxAttempts: Int): List<SyncQueueEntity>
 
     @Query("SELECT * FROM sync_queue WHERE client_uuid = :clientUuid LIMIT 1")
     suspend fun findByClientUuid(clientUuid: String): SyncQueueEntity?

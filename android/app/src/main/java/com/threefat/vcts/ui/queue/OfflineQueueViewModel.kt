@@ -2,6 +2,7 @@ package com.threefat.vcts.ui.queue
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.threefat.vcts.data.local.dao.CollectionDao
 import com.threefat.vcts.data.local.dao.SyncQueueDao
 import com.threefat.vcts.data.local.entity.SyncQueueEntity
 import com.threefat.vcts.data.preferences.AppPreferences
@@ -12,12 +13,13 @@ import javax.inject.Inject
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 
 @HiltViewModel
 class OfflineQueueViewModel @Inject constructor(
     private val queueDao: SyncQueueDao,
+    private val collectionDao: CollectionDao,
     private val syncScheduler: SyncScheduler,
     appPreferences: AppPreferences,
 ) : ViewModel() {
@@ -36,6 +38,13 @@ class OfflineQueueViewModel @Inject constructor(
         syncScheduler.requestImmediate()
     }
 
+    fun onDiscardClicked(clientUuid: String) {
+        viewModelScope.launch {
+            queueDao.delete(clientUuid)
+            collectionDao.deleteByClientUuid(clientUuid)
+        }
+    }
+
     private fun SyncQueueEntity.toUiRow(): OfflineQueueRow = OfflineQueueRow(
         clientUuid = clientUuid,
         payloadType = payloadType,
@@ -45,7 +54,13 @@ class OfflineQueueViewModel @Inject constructor(
         lastErrorMessage = lastErrorMessage,
         enqueuedAtEpochMillis = enqueuedAt,
         lastTriedAtEpochMillis = lastTriedAt,
+        canDiscard = SyncStatus.fromWire(status) == SyncStatus.FAILED ||
+            attempts >= MAX_ATTEMPTS,
     )
+
+    companion object {
+        private const val MAX_ATTEMPTS = 10
+    }
 }
 
 /**
@@ -67,4 +82,5 @@ data class OfflineQueueRow(
     val lastErrorMessage: String?,
     val enqueuedAtEpochMillis: Long,
     val lastTriedAtEpochMillis: Long?,
+    val canDiscard: Boolean,
 )

@@ -57,6 +57,11 @@ export async function GET(req: NextRequest) {
 		const wantCollections = scope === "all" || scope === "collections";
 
 		const result = await withTenant(auth.tid, async (tx) => {
+			const customerConds = [];
+			if (since) customerConds.push(gt(customers.updatedAt, since));
+			if (auth.role === "agent")
+				customerConds.push(eq(customers.assignedAgentId, auth.sub));
+
 			const customersOut = wantCustomers
 				? await tx
 						.select({
@@ -77,7 +82,7 @@ export async function GET(req: NextRequest) {
 							updatedAt: customers.updatedAt,
 						})
 						.from(customers)
-						.where(since ? gt(customers.updatedAt, since) : undefined)
+						.where(customerConds.length ? and(...customerConds) : undefined)
 						.orderBy(asc(customers.updatedAt))
 						.limit(PAGE_SIZE)
 				: [];

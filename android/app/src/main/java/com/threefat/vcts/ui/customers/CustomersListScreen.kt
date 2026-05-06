@@ -245,6 +245,12 @@ private fun CustomerRowCard(row: CustomerRow, onClick: () -> Unit) {
                     maxLines = 2,
                 )
             }
+            Text(
+                text = stringResource(R.string.customers_assigned_to_you),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.Medium,
+            )
             Spacer(Modifier.height(2.dp))
             LabeledLine(
                 title = stringResource(R.string.customers_outstanding),

@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 
@@ -36,7 +36,11 @@ export async function GET(
       const rows = await tx
         .select()
         .from(customers)
-        .where(eq(customers.id, id))
+        .where(
+          auth.role === "agent"
+            ? and(eq(customers.id, id), eq(customers.assignedAgentId, auth.sub))
+            : eq(customers.id, id),
+        )
         .limit(1);
       return rows[0];
     });

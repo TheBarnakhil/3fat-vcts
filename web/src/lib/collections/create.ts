@@ -129,11 +129,7 @@ export async function createCollectionInTx(
 		.limit(1);
 	if (!cust) throw notFound("Customer not found in this tenant");
 
-	if (
-		auth.role === "agent" &&
-		cust.assignedAgentId &&
-		cust.assignedAgentId !== agentId
-	) {
+	if (auth.role === "agent" && cust.assignedAgentId !== agentId) {
 		throw forbidden("This customer is not assigned to you");
 	}
 
