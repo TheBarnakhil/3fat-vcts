@@ -1,0 +1,117 @@
+# Single source of truth for every dependency version. Keep this file ordered
+# alphabetically inside each section; bumps land here and in nowhere else.
+[versions]
+agp = "8.13.2"
+kotlin = "2.0.21"
+ksp = "2.0.21-1.0.28"
+
+# AndroidX
+activityCompose = "1.9.3"
+appcompat = "1.7.0"
+coreKtx = "1.15.0"
+datastore = "1.1.1"
+hilt = "2.52"
+hiltNavigationCompose = "1.2.0"
+hiltWork = "1.2.0"
+lifecycle = "2.8.7"
+navigationCompose = "2.8.4"
+room = "2.6.1"
+securityCrypto = "1.1.0-alpha06"
+splashscreen = "1.0.1"
+sqlcipher = "4.6.1"
+sqlite = "2.4.0"
+workManager = "2.9.1"
+
+# Compose
+composeBom = "2024.12.01"
+
+# Networking + JSON
+kotlinSerialization = "1.7.3"
+kotlinxCoroutines = "1.9.0"
+okhttp = "4.12.0"
+retrofit = "2.11.0"
+retrofitKotlinSerialization = "1.0.0"
+
+# Firebase / Google Services
+firebaseBom = "33.7.0"
+googleServices = "4.4.2"
+playServicesLocation = "21.3.0"
+
+# PDF
+pdfboxAndroid = "2.0.27.0"
+
+# Testing
+junit = "4.13.2"
+junitExt = "1.2.1"
+espresso = "3.6.1"
+
+[libraries]
+# AndroidX core
+androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "activityCompose" }
+androidx-appcompat = { module = "androidx.appcompat:appcompat", version.ref = "appcompat" }
+androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }
+androidx-core-splashscreen = { module = "androidx.core:core-splashscreen", version.ref = "splashscreen" }
+androidx-datastore-preferences = { module = "androidx.datastore:datastore-preferences", version.ref = "datastore" }
+androidx-lifecycle-runtime-ktx = { module = "androidx.lifecycle:lifecycle-runtime-ktx", version.ref = "lifecycle" }
+androidx-lifecycle-runtime-compose = { module = "androidx.lifecycle:lifecycle-runtime-compose", version.ref = "lifecycle" }
+androidx-lifecycle-viewmodel-compose = { module = "androidx.lifecycle:lifecycle-viewmodel-compose", version.ref = "lifecycle" }
+androidx-navigation-compose = { module = "androidx.navigation:navigation-compose", version.ref = "navigationCompose" }
+androidx-room-runtime = { module = "androidx.room:room-runtime", version.ref = "room" }
+androidx-room-ktx = { module = "androidx.room:room-ktx", version.ref = "room" }
+androidx-room-compiler = { module = "androidx.room:room-compiler", version.ref = "room" }
+androidx-security-crypto = { module = "androidx.security:security-crypto", version.ref = "securityCrypto" }
+androidx-sqlite = { module = "androidx.sqlite:sqlite", version.ref = "sqlite" }
+androidx-work-runtime-ktx = { module = "androidx.work:work-runtime-ktx", version.ref = "workManager" }
+androidx-hilt-work = { module = "androidx.hilt:hilt-work", version.ref = "hiltWork" }
+androidx-hilt-compiler = { module = "androidx.hilt:hilt-compiler", version.ref = "hiltWork" }
+sqlcipher-android = { module = "net.zetetic:sqlcipher-android", version.ref = "sqlcipher" }
+
+# Compose (versions resolved from BOM)
+androidx-compose-bom = { module = "androidx.compose:compose-bom", version.ref = "composeBom" }
+androidx-compose-foundation = { module = "androidx.compose.foundation:foundation" }
+androidx-compose-material-icons-extended = { module = "androidx.compose.material:material-icons-extended" }
+androidx-compose-material3 = { module = "androidx.compose.material3:material3" }
+androidx-compose-runtime = { module = "androidx.compose.runtime:runtime" }
+androidx-compose-ui = { module = "androidx.compose.ui:ui" }
+androidx-compose-ui-graphics = { module = "androidx.compose.ui:ui-graphics" }
+androidx-compose-ui-tooling = { module = "androidx.compose.ui:ui-tooling" }
+androidx-compose-ui-tooling-preview = { module = "androidx.compose.ui:ui-tooling-preview" }
+androidx-compose-ui-test-junit4 = { module = "androidx.compose.ui:ui-test-junit4" }
+androidx-compose-ui-test-manifest = { module = "androidx.compose.ui:ui-test-manifest" }
+
+# Hilt
+hilt-android = { module = "com.google.dagger:hilt-android", version.ref = "hilt" }
+hilt-compiler = { module = "com.google.dagger:hilt-compiler", version.ref = "hilt" }
+androidx-hilt-navigation-compose = { module = "androidx.hilt:hilt-navigation-compose", version.ref = "hiltNavigationCompose" }
+
+# Networking
+kotlinx-coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "kotlinxCoroutines" }
+kotlinx-coroutines-play-services = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-play-services", version.ref = "kotlinxCoroutines" }
+kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinSerialization" }
+okhttp = { module = "com.squareup.okhttp3:okhttp", version.ref = "okhttp" }
+okhttp-logging = { module = "com.squareup.okhttp3:logging-interceptor", version.ref = "okhttp" }
+retrofit = { module = "com.squareup.retrofit2:retrofit", version.ref = "retrofit" }
+retrofit-kotlinx-serialization = { module = "com.jakewharton.retrofit:retrofit2-kotlinx-serialization-converter", version.ref = "retrofitKotlinSerialization" }
+
+# Firebase / Play Services
+firebase-bom = { module = "com.google.firebase:firebase-bom", version.ref = "firebaseBom" }
+firebase-analytics = { module = "com.google.firebase:firebase-analytics-ktx" }
+firebase-crashlytics = { module = "com.google.firebase:firebase-crashlytics-ktx" }
+play-services-location = { module = "com.google.android.gms:play-services-location", version.ref = "playServicesLocation" }
+
+# PDF rendering
+pdfbox-android = { module = "com.tom-roush:pdfbox-android", version.ref = "pdfboxAndroid" }
+
+# Test
+junit = { module = "junit:junit", version.ref = "junit" }
+androidx-test-junit-ext = { module = "androidx.test.ext:junit", version.ref = "junitExt" }
+androidx-espresso-core = { module = "androidx.test.espresso:espresso-core", version.ref = "espresso" }
+
+[plugins]
+android-application = { id = "com.android.application", version.ref = "agp" }
+google-services = { id = "com.google.gms.google-services", version.ref = "googleServices" }
+hilt = { id = "com.google.dagger.hilt.android", version.ref = "hilt" }
+kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
+kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
+ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }

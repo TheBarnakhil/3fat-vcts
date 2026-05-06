@@ -16,13 +16,13 @@ overview: Deliver the multi-tenant Verified Collection Tracking System in 11 inc
     status: pending
   - id: phase4
     content: "Phase 4 - Android scaffold: Material 3 VctsTheme (light/dark/system), Compose motion primitives, Compose + Hilt, secure token storage, cert pinning, email-routed login flow"
-    status: pending
+    status: completed
   - id: phase5
     content: "Phase 5 - Android collection flow: customer search, GPS gate, form, on-device PDF preview"
-    status: pending
+    status: completed
   - id: phase6
     content: "Phase 6 - Offline sync: Room queue, WorkManager, conflict resolution, SQLCipher, offline queue UI"
-    status: pending
+    status: in_progress
   - id: phase7
     content: Phase 7 - Location logging + visit-validation worker + manager movement replay API
     status: pending

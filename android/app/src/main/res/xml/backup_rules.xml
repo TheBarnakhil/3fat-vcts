@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  We disable Auto Backup because the encrypted refresh-token preference is
+  device-bound (Keystore-wrapped); restoring it on a new device would silently
+  fail decryption. Disabling Auto Backup is the safest default for an app
+  that holds session secrets.
+-->
+<full-backup-content>
+    <exclude domain="sharedpref" path="vcts_secure_prefs.xml"/>
+    <exclude domain="sharedpref" path="vcts_secure_prefs"/>
+</full-backup-content>

@@ -1,6 +1,5 @@
-import { and, desc, eq, gte, lt, sql } from "drizzle-orm";
+import { and, desc, eq, gte, lt } from "drizzle-orm";
 import { NextResponse, type NextRequest } from "next/server";
-import { z } from "zod";
 
 import {
 	collections as collectionsTable,
@@ -8,23 +7,19 @@ import {
 	users,
 } from "@/db/schema";
 import { withoutTenant, withTenant } from "@/db/tenant";
-import { appendAudit } from "@/lib/audit/chain";
 import { requireAuth, requireRole } from "@/lib/auth/context";
-import { env } from "@/lib/env";
+import {
+	buildCollectionAuditWriter,
+	CollectionCreateBody,
+	createCollectionInTx,
+} from "@/lib/collections/create";
 import {
 	badRequest,
-	forbidden,
 	HttpError,
-	notFound,
 	tooMany,
 	toResponse,
 } from "@/lib/errors";
-import { haversineMeters } from "@/lib/geo/haversine";
 import { limitCollections, rateLimitHeaders } from "@/lib/rate-limit";
-import {
-	fiscalYearForDate,
-	formatReceiptNo,
-} from "@/lib/receipts/format";
 
 export const runtime = "nodejs";
 
@@ -35,21 +30,6 @@ function clientIp(req: NextRequest): string | null {
 		null
 	);
 }
-
-const CreateBody = z.object({
-	clientUuid: z.string().uuid(),
-	customerId: z.string().uuid(),
-	amount: z.number().positive().finite(),
-	paymentMode: z.enum(["cash", "cheque", "bank_transfer", "upi"]),
-	refNo: z.string().max(64).optional().nullable(),
-	chequeDate: z.coerce.date().optional().nullable(),
-	remarks: z.string().max(500).optional().nullable(),
-	collectionLat: z.number().gte(-90).lte(90),
-	collectionLng: z.number().gte(-180).lte(180),
-	gpsAccuracyM: z.number().nonnegative().optional().nullable(),
-	collectedAt: z.coerce.date().optional(),
-	deviceId: z.string().max(128).optional().nullable(),
-});
 
 // --- GET /api/collections ---------------------------------------------------
 
@@ -149,22 +129,11 @@ export async function POST(req: NextRequest) {
 		// expected actor is an agent or a manager covering for one.
 		requireRole(auth, "agent", "manager", "super_admin");
 
-		const parsed = CreateBody.safeParse(await req.json().catch(() => ({})));
+		const parsed = CollectionCreateBody.safeParse(
+			await req.json().catch(() => ({})),
+		);
 		if (!parsed.success) throw badRequest("Invalid body", parsed.error.flatten());
 		const data = parsed.data;
-
-		// GPS accuracy gate: store the fix but reject obviously bad ones.
-		if (
-			data.gpsAccuracyM != null &&
-			data.gpsAccuracyM > env.GPS_MAX_ACCURACY_M
-		) {
-			throw new HttpError(
-				422,
-				"gps_accuracy_too_low",
-				`GPS accuracy ${data.gpsAccuracyM.toFixed(0)}m exceeds limit ${env.GPS_MAX_ACCURACY_M}m`,
-				{ accuracyM: data.gpsAccuracyM, allowedM: env.GPS_MAX_ACCURACY_M },
-			);
-		}
 
 		const agentId = auth.sub;
 
@@ -180,9 +149,6 @@ export async function POST(req: NextRequest) {
 				{ status: err.status, headers: rlHeaders },
 			);
 		}
-
-		const collectedAt = data.collectedAt ?? new Date();
-		const fy = fiscalYearForDate(collectedAt);
 
 		// Pre-fetch agent_code from the auth-only `users` table. vcts_app has
 		// no SELECT on users (RLS would happily scope us to the right tenant
@@ -203,131 +169,21 @@ export async function POST(req: NextRequest) {
 			);
 		}
 
-		const result = await withTenant(auth.tid, async (tx) => {
-			// --- Idempotency: replay if (tenant, client_uuid) already exists -
-			const existing = await tx
-				.select()
-				.from(collectionsTable)
-				.where(eq(collectionsTable.clientUuid, data.clientUuid))
-				.limit(1);
-			if (existing[0]) {
-				return { row: existing[0], replayed: true } as const;
-			}
-
-			// --- Customer (RLS-filtered to the tenant) -----------------------
-			const [cust] = await tx
-				.select()
-				.from(customers)
-				.where(eq(customers.id, data.customerId))
-				.limit(1);
-			if (!cust) throw notFound("Customer not found in this tenant");
-
-			// Agents may only collect from customers assigned to them.
-			if (
-				auth.role === "agent" &&
-				cust.assignedAgentId &&
-				cust.assignedAgentId !== agentId
-			) {
-				throw forbidden("This customer is not assigned to you");
-			}
-
-			// --- Server-side geofence ---------------------------------------
-			const distanceM = haversineMeters(
-				{ lat: cust.lat, lng: cust.lng },
-				{ lat: data.collectionLat, lng: data.collectionLng },
-			);
-			if (distanceM > cust.geofenceRadiusM) {
-				throw new HttpError(
-					422,
-					"geofence_violation",
-					`Collection point is ${distanceM.toFixed(0)}m from the registered customer location; allowed radius is ${cust.geofenceRadiusM}m.`,
-					{
-						distanceM: Math.round(distanceM),
-						allowedM: cust.geofenceRadiusM,
-					},
-				);
-			}
-
-			// --- Atomic per-tenant + per-agent + per-FY sequence ------------
-			// next_receipt_seq() is a SECURITY DEFINER fn that asserts the
-			// caller's app.tenant_id matches; see scripts/apply-rls.ts.
-			const seqResult = await tx.execute(
-				sql`SELECT next_receipt_seq(${auth.tid}::uuid, ${agentId}::uuid, ${fy.fyStart}::int) AS seq`,
-			);
-			const seqRows = (seqResult as unknown as { rows?: Array<{ seq: number }> })
-				.rows ?? (seqResult as unknown as Array<{ seq: number }>);
-			const seqRow = Array.isArray(seqRows) ? seqRows[0] : undefined;
-			if (!seqRow || seqRow.seq == null) {
-				throw new HttpError(
-					500,
-					"internal_error",
-					"Failed to allocate receipt sequence",
-				);
-			}
-
-			const receiptNo = formatReceiptNo({
-				tenantSlug: auth.tslug,
+		const result = await withTenant(auth.tid, async (tx) =>
+			createCollectionInTx(tx, {
+				auth,
 				agentCode: agentRow.agentCode!,
-				fyLabel: fy.label,
-				seq: Number(seqRow.seq),
-			});
-
-			// --- Insert collection ------------------------------------------
-			const [row] = await tx
-				.insert(collectionsTable)
-				.values({
+				data,
+				writeAudit: buildCollectionAuditWriter({
 					tenantId: auth.tid,
-					clientUuid: data.clientUuid,
-					customerId: data.customerId,
-					agentId,
-					amount: data.amount,
-					paymentMode: data.paymentMode,
-					refNo: data.refNo ?? null,
-					chequeDate: data.chequeDate ?? null,
-					remarks: data.remarks ?? null,
-					collectionLat: data.collectionLat,
-					collectionLng: data.collectionLng,
-					gpsAccuracyM: data.gpsAccuracyM ?? null,
-					collectedAt,
-					receiptNo,
+					actorId: agentId,
+					ip: clientIp(req),
 					deviceId: data.deviceId ?? null,
-					syncStatus: "synced",
-				})
-				.returning();
-
-			// --- Bookkeeping: outstanding balance ---------------------------
-			await tx
-				.update(customers)
-				.set({
-					outstandingBalance: sql`${customers.outstandingBalance} - ${data.amount}`,
-					updatedAt: new Date(),
-				})
-				.where(eq(customers.id, data.customerId));
-
-			// --- Audit chain row --------------------------------------------
-			await appendAudit(tx, {
-				tenantId: auth.tid,
-				actorId: agentId,
-				action: "collection.create",
-				entityType: "collection",
-				entityId: row.id,
-				after: {
-					receiptNo,
-					customerId: row.customerId,
-					amount: row.amount,
-					paymentMode: row.paymentMode,
-					lat: row.collectionLat,
-					lng: row.collectionLng,
-					distanceM: Math.round(distanceM),
-					allowedM: cust.geofenceRadiusM,
-				},
-				ip: clientIp(req),
-				deviceId: data.deviceId ?? null,
-				userAgent: req.headers.get("user-agent"),
-			});
-
-			return { row, replayed: false } as const;
-		});
+					userAgent: req.headers.get("user-agent"),
+					tx,
+				}),
+			}),
+		);
 
 		const status = result.replayed ? 200 : 201;
 		return NextResponse.json(

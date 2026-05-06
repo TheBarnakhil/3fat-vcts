@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Cleartext is disabled for our production host; OkHttp does pinning at the
+  app layer (NetworkModule). This file ensures that even non-OkHttp HTTP
+  attempts (e.g. accidental WebView loads) are blocked over HTTP.
+
+  Debug builds may need to talk to localhost / 10.0.2.2 over plaintext when
+  testing without a tunnel; that's allowed via the debug-overrides block.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+
+    <debug-overrides>
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </debug-overrides>
+</network-security-config>

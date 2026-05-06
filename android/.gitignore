@@ -1,0 +1,25 @@
+# Built outputs
+*.apk
+*.aab
+*.ap_
+*.dex
+**/build/
+.gradle/
+local.properties
+
+# Studio metadata
+.idea/
+*.iml
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Secrets / per-machine
+google-services.json
+release.keystore
+release-keystore.properties
+key.properties
+
+# OS
+.DS_Store
+Thumbs.db

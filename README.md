@@ -5,7 +5,7 @@ GPS-enforced field-agent collections platform. Multi-tenant.
 Structure:
 
 - `web/` - Next.js 16 admin portal + API (TypeScript, Drizzle ORM, Neon Postgres, Upstash Redis). This is what Vercel deploys.
-- `android/` - Kotlin + Jetpack Compose field app (added in Phase 4).
+- `android/` - Kotlin + Jetpack Compose field app. See `android/README.md` for setup.
 - `VCTS_PRD_v1.0.docx` - product requirements document.
 
 Phases: see the active plan in Cursor (`vcts_multi-phase_build_*.plan.md`).

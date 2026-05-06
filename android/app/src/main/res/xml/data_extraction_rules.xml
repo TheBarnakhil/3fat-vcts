@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Same exclusions as backup_rules but for D2D transfer + cloud backup
+     under Android 12+. Both files are required by the manifest. -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="sharedpref" path="vcts_secure_prefs.xml"/>
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="sharedpref" path="vcts_secure_prefs.xml"/>
+    </device-transfer>
+</data-extraction-rules>

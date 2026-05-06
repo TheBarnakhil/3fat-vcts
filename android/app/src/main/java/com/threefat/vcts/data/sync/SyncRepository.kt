@@ -1,0 +1,89 @@
+package com.threefat.vcts.data.sync
+
+import com.threefat.vcts.data.local.dao.SyncQueueDao
+import com.threefat.vcts.data.preferences.AppPreferences
+import com.threefat.vcts.domain.sync.PullSummary
+import com.threefat.vcts.domain.sync.PushSummary
+import com.threefat.vcts.domain.sync.SyncSummary
+import javax.inject.Inject
+import javax.inject.Singleton
+import kotlinx.coroutines.flow.Flow
+
+/**
+ * Top-level facade over the offline sync engine. The workers call into
+ * this class instead of constructing a drainer + puller themselves so the
+ * "what does a sync round actually do" decision lives in one place.
+ */
+@Singleton
+class SyncRepository @Inject constructor(
+    private val pushDrainer: CollectionsPushDrainer,
+    private val pullSync: PullSync,
+    private val queueDao: SyncQueueDao,
+    private val appPreferences: AppPreferences,
+) {
+
+    /** Live pending+failed queue depth for the dashboard badge. */
+    fun observePendingCount(): Flow<Int> = queueDao.observePendingCount()
+
+    /** Last time a worker successfully completed any phase of a sync. */
+    fun observeLastSyncAt(): Flow<Long?> = appPreferences.syncLastSuccessAt
+
+    /**
+     * Drain the push queue until empty (or transient failure stops us)
+     * and then run one pull pass. Returns the per-pass summary so the
+     * worker can decide to retry / chain another run.
+     */
+    suspend fun syncOnce(): SyncSummary {
+        val push = drainPushUntilStable()
+        val pull = runCatching { pullSync.pullOnce() }.getOrElse {
+            // Pull failures are non-fatal for this round; let the worker
+            // backoff and retry on the next tick.
+            null
+        }
+        if (push?.isClean == true || pull != null) {
+            appPreferences.setSyncLastSuccessAt(System.currentTimeMillis())
+        }
+        return SyncSummary(push = push, pull = pull)
+    }
+
+    /** Push-only, used by the immediate post-submit kick. */
+    suspend fun pushOnly(): PushSummary? = drainPushUntilStable()
+
+    /** Pull-only, used on dashboard resume / manual refresh. */
+    suspend fun pullOnly(): PullSummary? =
+        runCatching { pullSync.pullOnce() }.getOrNull()
+
+    private suspend fun drainPushUntilStable(): PushSummary? {
+        var aggregate: PushSummary? = null
+        var rounds = 0
+        while (rounds < MAX_ROUNDS) {
+            val pass = pushDrainer.drainOnce()
+            aggregate = combine(aggregate, pass)
+            // Stop when nothing was attempted (queue empty) or the round
+            // hit a transient failure (so we yield back to the worker's
+            // retry policy instead of looping endlessly against the
+            // network failure).
+            if (pass.attempted == 0) break
+            if (pass.transientFailures > 0) break
+            rounds += 1
+        }
+        return aggregate
+    }
+
+    private fun combine(a: PushSummary?, b: PushSummary): PushSummary {
+        if (a == null) return b
+        return PushSummary(
+            attempted = a.attempted + b.attempted,
+            created = a.created + b.created,
+            duplicate = a.duplicate + b.duplicate,
+            rejected = a.rejected + b.rejected,
+            transientFailures = a.transientFailures + b.transientFailures,
+            supervisorReview = a.supervisorReview + b.supervisorReview,
+        )
+    }
+
+    companion object {
+        /** Hard ceiling on how many push batches we drain per worker run. */
+        private const val MAX_ROUNDS = 8
+    }
+}

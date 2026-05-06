@@ -159,6 +159,11 @@ export const collections = pgTable(
 		supervisorReview: boolean("supervisor_review").notNull().default(false),
 		syncStatus: syncStatus("sync_status").notNull().default("synced"),
 		deviceId: text("device_id"),
+		// Outstanding balance the agent's device believed the customer had at
+		// the moment they hit "Submit". Filled in by the offline sync push
+		// (Phase 6); compared against the *current* server-side balance to
+		// detect drift > 10% which triggers a supervisor_reviews row.
+		lastKnownOutstanding: doublePrecision("last_known_outstanding"),
 		createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 	},
 	(t) => [
@@ -290,6 +295,43 @@ export const auditTrail = pgTable(
 );
 
 // ---------------------------------------------------------------------------
+// supervisor_reviews - rows raised by the offline sync engine when something
+// about a replayed collection needs a human eye (balance drift, late replay,
+// repeated fence violations). The Phase 9 web admin will surface these; for
+// now the table just exists so Phase 6 can write into it.
+// ---------------------------------------------------------------------------
+
+export const supervisorReviews = pgTable(
+	"supervisor_reviews",
+	{
+		id: uuid("id").defaultRandom().primaryKey(),
+		tenantId: uuid("tenant_id")
+			.notNull()
+			.references(() => tenants.id, { onDelete: "restrict" }),
+		collectionId: uuid("collection_id")
+			.notNull()
+			.references(() => collections.id, { onDelete: "restrict" }),
+		// Free-form code so we can extend without a migration. Today:
+		//   "balance_drift" - >10% delta between client + server outstanding
+		//   "stale_replay"  - collection was queued > N days before sync
+		reason: text("reason").notNull(),
+		payload: jsonb("payload").notNull().default(sql`'{}'::jsonb`),
+		resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+		resolvedBy: uuid("resolved_by").references(() => users.id, {
+			onDelete: "set null",
+		}),
+		createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+	},
+	(t) => [
+		index("supervisor_reviews_tenant_created_idx").on(t.tenantId, t.createdAt),
+		index("supervisor_reviews_tenant_collection_idx").on(
+			t.tenantId,
+			t.collectionId,
+		),
+	],
+);
+
+// ---------------------------------------------------------------------------
 // sync_queue - server-side mirror of the Android queue, useful for diagnosing
 // stuck submissions. Populated in Phase 6.
 // ---------------------------------------------------------------------------
@@ -355,4 +397,6 @@ export type Customer = typeof customers.$inferSelect;
 export type NewCustomer = typeof customers.$inferInsert;
 export type Collection = typeof collections.$inferSelect;
 export type NewCollection = typeof collections.$inferInsert;
+export type SupervisorReview = typeof supervisorReviews.$inferSelect;
+export type NewSupervisorReview = typeof supervisorReviews.$inferInsert;
 export type UserRole = (typeof userRole.enumValues)[number];

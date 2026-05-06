@@ -1,0 +1,99 @@
+<resources>
+    <string name="app_name">VCTS</string>
+    <string name="app_tagline">Verified Collection Tracking</string>
+
+    <!-- Login -->
+    <string name="login_title">Welcome back</string>
+    <string name="login_subtitle">Sign in to your tenant workspace.</string>
+    <string name="login_email">Work email</string>
+    <string name="login_password">Password</string>
+    <string name="login_submit">Sign in</string>
+    <string name="login_signing_in">Signing in…</string>
+    <string name="login_error_default">Sign-in failed. Check your email and password.</string>
+    <string name="login_error_offline">No internet connection. Try again when you\'re online.</string>
+
+    <!-- Settings -->
+    <string name="settings_title">Settings</string>
+    <string name="settings_theme">Theme</string>
+    <string name="settings_theme_system">Follow system</string>
+    <string name="settings_theme_light">Light</string>
+    <string name="settings_theme_dark">Dark</string>
+    <string name="settings_signed_in_as">Signed in as</string>
+    <string name="settings_sign_out">Sign out</string>
+
+    <!-- Dashboard -->
+    <string name="dashboard_title">Dashboard</string>
+    <string name="dashboard_open_customers">Open customers</string>
+    <string name="dashboard_customers_card_title">Customers</string>
+    <string name="dashboard_customers_card_subtitle">Search, walk in, record a collection.</string>
+
+    <!-- Customers list -->
+    <string name="customers_title">Customers</string>
+    <string name="customers_search_hint">Search by name or code</string>
+    <string name="customers_pull_to_refresh">Pull to refresh</string>
+    <string name="customers_empty_title">No customers yet</string>
+    <string name="customers_empty_subtitle">Pull to refresh to fetch your assignments.</string>
+    <string name="customers_distance_unknown">Location unavailable</string>
+    <string name="customers_outstanding">Outstanding</string>
+    <string name="customers_load_failed">Couldn\'t reach the server. Showing the cached list.</string>
+
+    <!-- Customer detail -->
+    <string name="customer_detail_title">Customer</string>
+    <string name="customer_outstanding">Outstanding balance</string>
+    <string name="customer_radius">Geofence radius</string>
+    <string name="customer_distance_inside">You are %1$dm away · inside the fence</string>
+    <string name="customer_distance_outside">You are %1$dm away · move to within %2$dm</string>
+    <string name="customer_accuracy_warning">GPS accuracy is %1$dm. Submission requires ≤ %2$dm. Move to open sky.</string>
+    <string name="customer_locating">Acquiring GPS…</string>
+    <string name="customer_start_collection">Start collection</string>
+
+    <!-- Collection form -->
+    <string name="collection_form_title">New collection</string>
+    <string name="collection_amount">Amount</string>
+    <string name="collection_payment_mode">Payment mode</string>
+    <string name="collection_ref_no">Reference / UTR</string>
+    <string name="collection_cheque_date">Cheque date</string>
+    <string name="collection_remarks">Remarks (optional)</string>
+    <string name="collection_review">Review &amp; submit</string>
+    <string name="collection_submitting">Recording collection…</string>
+    <string name="collection_review_dialog_title">Confirm collection</string>
+    <string name="collection_review_dialog_amount">Amount: ₹%1$s</string>
+    <string name="collection_review_dialog_mode">Mode: %1$s</string>
+    <string name="collection_review_dialog_gps">GPS: %1$.5f, %2$.5f · ±%3$dm</string>
+    <string name="collection_review_dialog_confirm">Submit</string>
+    <string name="collection_review_dialog_cancel">Edit</string>
+    <string name="collection_error_geofence">You are %1$dm from the registered location (allowed: %2$dm). Move closer and try again.</string>
+    <string name="collection_error_gps">GPS accuracy %1$dm exceeds the %2$dm limit.</string>
+    <string name="collection_error_rate_limit">You are submitting too fast. Wait a moment and retry.</string>
+    <string name="collection_error_forbidden">This customer is not assigned to you.</string>
+    <string name="collection_error_validation">Some fields are invalid. Review and retry.</string>
+    <string name="collection_error_server">Server error. Try again in a moment.</string>
+    <string name="collection_error_offline">No internet. Phase 6 will queue this; for now please reconnect.</string>
+    <string name="collection_error_unknown">Something went wrong. Please retry.</string>
+
+    <!-- Receipt -->
+    <string name="receipt_title">Receipt</string>
+    <string name="receipt_share">Share</string>
+    <string name="receipt_done">Done</string>
+    <string name="receipt_replayed_notice">This collection was already recorded; showing the original receipt.</string>
+    <string name="receipt_render_failed">Couldn\'t render the PDF preview.</string>
+
+    <!-- Offline queue (Phase 6) -->
+    <string name="queue_title">Offline queue</string>
+    <string name="queue_empty_title">Everything is synced</string>
+    <string name="queue_empty_subtitle">Submissions you make while offline will appear here until they reach the server.</string>
+    <string name="queue_status_pending">Pending</string>
+    <string name="queue_status_in_flight">Syncing…</string>
+    <string name="queue_status_failed">Failed</string>
+    <string name="queue_retry_all">Retry all</string>
+    <string name="queue_attempt_count">%1$d attempts</string>
+    <string name="queue_last_synced">Last sync: %1$s</string>
+    <string name="queue_never_synced">Last sync: never</string>
+    <string name="queue_open_button">Open offline queue</string>
+    <string name="queue_pending_count">%1$d pending</string>
+
+    <!-- Common -->
+    <string name="common_back">Back</string>
+    <string name="common_retry">Retry</string>
+    <string name="common_close">Close</string>
+</resources>

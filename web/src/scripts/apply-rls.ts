@@ -47,6 +47,7 @@ const TENANT_TABLES = [
 	"location_logs",
 	"audit_trail",
 	"sync_queue",
+	"supervisor_reviews",
 ];
 
 // Tables auth flows must read before the tenant is known. Not RLS-scoped;
@@ -86,8 +87,13 @@ async function grantAppPrivileges(): Promise<void> {
 	// Per-table privileges: vcts_app gets SELECT/INSERT/UPDATE on tenant tables,
 	// but NO DELETE on the financial ledger or the audit trail (append-only).
 	for (const t of TENANT_TABLES) {
+		// Append-only ledger tables: vcts_app may write but never DELETE rows.
+		// supervisor_reviews can be UPDATEd (to set resolved_at/resolved_by)
+		// but rows must never disappear.
 		const grants =
-			t === "collections" || t === "audit_trail"
+			t === "collections" ||
+			t === "audit_trail" ||
+			t === "supervisor_reviews"
 				? "SELECT, INSERT, UPDATE"
 				: "SELECT, INSERT, UPDATE, DELETE";
 		await exec(`GRANT ${grants} ON TABLE "${t}" TO vcts_app`);
