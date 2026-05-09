@@ -61,6 +61,59 @@ interface CollectionDao {
     )
     suspend fun updateSyncStatusByClientUuid(clientUuid: String, status: String)
 
+    /**
+     * Phase 8: rows that have already synced server-side but still have
+     * local-only photo / signature buffers waiting to be uploaded. Used
+     * by [com.threefat.vcts.data.sync.AttachmentsPushDrainer].
+     */
+    @Query(
+        """
+        SELECT * FROM collections
+        WHERE sync_status = 'synced'
+          AND (photo_local_path IS NOT NULL OR signature_local_path IS NOT NULL)
+        ORDER BY collected_at ASC
+        LIMIT :limit
+        """,
+    )
+    suspend fun nextAttachmentBatch(limit: Int): List<CollectionEntity>
+
+    @Query(
+        """
+        UPDATE collections
+        SET photo_url = :photoUrl,
+            photo_local_path = NULL
+        WHERE id = :id
+        """,
+    )
+    suspend fun finalisePhotoUpload(id: String, photoUrl: String)
+
+    @Query(
+        """
+        UPDATE collections
+        SET signature_url = :signatureUrl,
+            signature_local_path = NULL
+        WHERE id = :id
+        """,
+    )
+    suspend fun finaliseSignatureUpload(id: String, signatureUrl: String)
+
+    @Query(
+        """
+        UPDATE collections
+        SET photo_local_path = :photoLocalPath,
+            signature_local_path = :signatureLocalPath
+        WHERE id = :id OR client_uuid = :id
+        """,
+    )
+    suspend fun updateLocalAttachmentPaths(
+        id: String,
+        photoLocalPath: String?,
+        signatureLocalPath: String?,
+    )
+
+    @Query("SELECT COUNT(*) FROM collections WHERE photo_local_path IS NOT NULL OR signature_local_path IS NOT NULL")
+    fun observePendingAttachmentCount(): Flow<Int>
+
     @Query("DELETE FROM collections")
     suspend fun clear()
 }

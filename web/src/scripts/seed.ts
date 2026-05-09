@@ -23,6 +23,9 @@ type SeedTenant = {
 	name: string;
 	accentHsl: string;
 	legalName: string;
+	address: string;
+	gstin: string;
+	phone: string;
 	admin: { email: string; name: string; password: string };
 	manager?: { email: string; name: string; password: string };
 	agents: Array<{ email: string; name: string; agentCode: string; password: string }>;
@@ -44,6 +47,9 @@ const DEMO: SeedTenant[] = [
 		name: "Acme Distributors",
 		accentHsl: "221 83% 53%", // indigo-ish
 		legalName: "Acme Distributors Pvt. Ltd.",
+		address: "12 MG Road, Bengaluru, Karnataka 560001",
+		gstin: "29AABCA1234R1ZJ",
+		phone: "+91-80-22001234",
 		admin: { email: "admin@acme.test", name: "Ava Acme", password: "Passw0rd!" },
 		manager: { email: "manager@acme.test", name: "Mia Manager", password: "Passw0rd!" },
 		agents: [
@@ -63,6 +69,9 @@ const DEMO: SeedTenant[] = [
 		name: "Globex Trading",
 		accentHsl: "142 76% 36%", // green
 		legalName: "Globex Trading Co. Ltd.",
+		address: "203 Linking Road, Bandra West, Mumbai, MH 400050",
+		gstin: "27AABCG5678R1Z2",
+		phone: "+91-22-44551234",
 		admin: { email: "admin@globex.test", name: "Gina Globex", password: "Passw0rd!" },
 		agents: [
 			{ email: "agent1@globex.test", name: "Gautam Agent", agentCode: "G001", password: "Passw0rd!" },
@@ -103,7 +112,13 @@ async function seedTenant(t: SeedTenant): Promise<void> {
 				slug: t.slug,
 				name: t.name,
 				settings: {
-					branding: { legalName: t.legalName, accentHsl: t.accentHsl },
+					branding: {
+						legalName: t.legalName,
+						address: t.address,
+						gstin: t.gstin,
+						phone: t.phone,
+						accentHsl: t.accentHsl,
+					},
 					geofence: { defaultRadiusM: 100, minAccuracyM: 50 },
 					sync: { intervalMin: 15 },
 				},

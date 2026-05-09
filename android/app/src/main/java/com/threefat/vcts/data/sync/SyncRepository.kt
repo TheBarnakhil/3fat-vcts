@@ -1,8 +1,10 @@
 package com.threefat.vcts.data.sync
 
+import com.threefat.vcts.data.local.dao.CollectionDao
 import com.threefat.vcts.data.local.dao.LocationLogDao
 import com.threefat.vcts.data.local.dao.SyncQueueDao
 import com.threefat.vcts.data.preferences.AppPreferences
+import com.threefat.vcts.domain.sync.AttachmentPushSummary
 import com.threefat.vcts.domain.sync.LocationPushSummary
 import com.threefat.vcts.domain.sync.PullSummary
 import com.threefat.vcts.domain.sync.PushSummary
@@ -26,9 +28,11 @@ import kotlinx.coroutines.flow.Flow
 class SyncRepository @Inject constructor(
     private val pushDrainer: CollectionsPushDrainer,
     private val locationLogsPushDrainer: LocationLogsPushDrainer,
+    private val attachmentsPushDrainer: AttachmentsPushDrainer,
     private val pullSync: PullSync,
     private val queueDao: SyncQueueDao,
     private val locationLogDao: LocationLogDao,
+    private val collectionDao: CollectionDao,
     private val appPreferences: AppPreferences,
 ) {
 
@@ -38,6 +42,10 @@ class SyncRepository @Inject constructor(
     /** Live unsynced tracker-fix depth for the active-duty badge. */
     fun observePendingLocationLogCount(): Flow<Int> =
         locationLogDao.observePendingCount()
+
+    /** Live count of synced collections still waiting to upload attachments. */
+    fun observePendingAttachmentCount(): Flow<Int> =
+        collectionDao.observePendingAttachmentCount()
 
     /** Last time a worker successfully completed any phase of a sync. */
     fun observeLastSyncAt(): Flow<Long?> = appPreferences.syncLastSuccessAt
@@ -50,6 +58,9 @@ class SyncRepository @Inject constructor(
     suspend fun syncOnce(): SyncSummary {
         val push = drainPushUntilStable()
         val locationPush = drainLocationLogsUntilStable()
+        // Attachments must run after the collection push so any rows
+        // that just got their server id are eligible.
+        val attachmentPush = drainAttachmentsUntilStable()
         val pull = runCatching { pullSync.pullOnce() }.getOrElse {
             // Pull failures are non-fatal for this round; let the worker
             // backoff and retry on the next tick.
@@ -58,6 +69,7 @@ class SyncRepository @Inject constructor(
         val anyClean =
             push?.isClean == true ||
                 locationPush?.isClean == true ||
+                attachmentPush?.isClean == true ||
                 pull != null
         if (anyClean) {
             appPreferences.setSyncLastSuccessAt(System.currentTimeMillis())
@@ -66,11 +78,16 @@ class SyncRepository @Inject constructor(
             push = push,
             pull = pull,
             locationPush = locationPush,
+            attachmentPush = attachmentPush,
         )
     }
 
     /** Push-only, used by the immediate post-submit kick. */
     suspend fun pushOnly(): PushSummary? = drainPushUntilStable()
+
+    /** Attachment-only, used by the receipt screen on demand. */
+    suspend fun pushAttachmentsOnly(): AttachmentPushSummary? =
+        drainAttachmentsUntilStable()
 
     /** Pull-only, used on dashboard resume / manual refresh. */
     suspend fun pullOnly(): PullSummary? =
@@ -110,6 +127,19 @@ class SyncRepository @Inject constructor(
         return aggregate
     }
 
+    private suspend fun drainAttachmentsUntilStable(): AttachmentPushSummary? {
+        var aggregate: AttachmentPushSummary? = null
+        var rounds = 0
+        while (rounds < MAX_ROUNDS) {
+            val pass = attachmentsPushDrainer.drainOnce()
+            aggregate = combineAttachment(aggregate, pass)
+            if (pass.attempted == 0) break
+            if (pass.transientFailures > 0) break
+            rounds += 1
+        }
+        return aggregate
+    }
+
     private fun combine(a: PushSummary?, b: PushSummary): PushSummary {
         if (a == null) return b
         return PushSummary(
@@ -132,6 +162,18 @@ class SyncRepository @Inject constructor(
             acknowledged = a.acknowledged + b.acknowledged,
             transientFailures = a.transientFailures + b.transientFailures,
             pruned = a.pruned + b.pruned,
+        )
+    }
+
+    private fun combineAttachment(
+        a: AttachmentPushSummary?,
+        b: AttachmentPushSummary,
+    ): AttachmentPushSummary {
+        if (a == null) return b
+        return AttachmentPushSummary(
+            attempted = a.attempted + b.attempted,
+            uploaded = a.uploaded + b.uploaded,
+            transientFailures = a.transientFailures + b.transientFailures,
         )
     }
 

@@ -23,6 +23,13 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- Phase 8: photo capture for collection proof. CAMERA is requested
+         in-app the first time the agent opens the capture sheet; the
+         camera hardware feature stays optional so devices without one
+         still install (the photo step is skippable). -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera.any" android:required="false" />
+
     <application
         android:name=".VctsApplication"
         android:allowBackup="false"
@@ -71,6 +78,20 @@
             android:name=".tracking.LocationLoggerService"
             android:exported="false"
             android:foregroundServiceType="location" />
+
+        <!-- Phase 8: FileProvider used by the share-sheet hand-off so we
+             can pass receipt PDFs and captured photos to WhatsApp, Gmail,
+             etc., without leaking the app's private storage URIs. The
+             authority MUST stay in sync with FileShare.kt. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_provider_paths" />
+        </provider>
 
     </application>
 </manifest>

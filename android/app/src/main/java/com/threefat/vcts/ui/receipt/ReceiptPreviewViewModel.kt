@@ -3,6 +3,7 @@ package com.threefat.vcts.ui.receipt
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.threefat.vcts.BuildConfig
 import com.threefat.vcts.data.receipt.ReceiptPdfRenderer
 import com.threefat.vcts.data.repository.CollectionsRepository
 import com.threefat.vcts.data.repository.CustomersRepository
@@ -117,4 +118,18 @@ data class ReceiptUiState(
     val isRenderingPdf: Boolean = false,
     val pdfFile: File? = null,
     val pdfError: String? = null,
-)
+) {
+    /**
+     * Verification URL embedded in the share-sheet text. Only meaningful
+     * once the receipt number is known (i.e. the row has synced).
+     *
+     * Receipt numbers carry slashes (e.g. `acme/A001/FY26/00042`); the web
+     * route is `[...path]` so we just URL-encode each segment to match
+     * `publicReceiptUrl()` on the server.
+     */
+    val verifyUrl: String?
+        get() = collection?.receiptNo?.let { rn ->
+            val path = rn.split('/').joinToString("/") { java.net.URLEncoder.encode(it, "UTF-8") }
+            "${BuildConfig.API_BASE_URL.trimEnd('/')}/r/$path"
+        }
+}

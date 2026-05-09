@@ -6,7 +6,7 @@ export type AuthUser = {
   id: string;
   email: string;
   name: string;
-  role: "super_admin" | "manager" | "agent";
+  role: "super_admin" | "manager" | "agent" | "auditor";
   tenantId: string;
   agentCode: string | null;
   lastLoginAt: string | null;

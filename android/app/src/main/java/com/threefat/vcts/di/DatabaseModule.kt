@@ -53,6 +53,7 @@ object DatabaseModule {
             .addMigrations(
                 VctsDatabase.MIGRATION_1_2,
                 VctsDatabase.MIGRATION_2_3,
+                VctsDatabase.MIGRATION_3_4,
             )
             // Pre-launch we still allow destructive fallback so a corrupt
             // local DB after a stalled install doesn't brick the agent's

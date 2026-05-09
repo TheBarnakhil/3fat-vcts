@@ -115,6 +115,8 @@ export async function GET(req: NextRequest) {
 							supervisorReview: collections.supervisorReview,
 							syncStatus: collections.syncStatus,
 							createdAt: collections.createdAt,
+							photoUrl: collections.photoUrl,
+							signatureUrl: collections.signatureUrl,
 						})
 						.from(collections)
 						.where(

@@ -129,5 +129,8 @@ data class SyncCollectionDto(
     val supervisorReview: Boolean = false,
     val syncStatus: String = "synced",
     val createdAt: String,
+    /** Phase 8 - R2 keys persisted on the server row. */
+    val photoUrl: String? = null,
+    val signatureUrl: String? = null,
 )
 

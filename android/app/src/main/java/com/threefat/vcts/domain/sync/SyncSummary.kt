@@ -37,8 +37,23 @@ data class LocationPushSummary(
     val isClean: Boolean get() = transientFailures == 0
 }
 
+/**
+ * Phase 8: attachment-upload drain summary. The drainer walks every
+ * synced collection that still has a `photo_local_path` /
+ * `signature_local_path` and replays the presign + PUT + attach
+ * pipeline.
+ */
+data class AttachmentPushSummary(
+    val attempted: Int,
+    val uploaded: Int,
+    val transientFailures: Int,
+) {
+    val isClean: Boolean get() = transientFailures == 0
+}
+
 data class SyncSummary(
     val push: PushSummary?,
     val pull: PullSummary?,
     val locationPush: LocationPushSummary? = null,
+    val attachmentPush: AttachmentPushSummary? = null,
 )

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Phase 8 - FileProvider paths.
+
+    Receipts (PDF), captured photos, and exported signatures are all
+    written under the app's private cache and files dir, then exposed
+    to other apps (WhatsApp, Gmail, etc.) via FileProvider so we don't
+    leak our private storage URI to an untrusted recipient.
+
+    Path entries are intentionally minimal so we only authorise the
+    specific subdirectories Phase 8 needs.
+-->
+<paths>
+    <!-- cacheDir/receipts/*.pdf  (ReceiptPdfRenderer output) -->
+    <cache-path name="receipts" path="receipts/" />
+    <!-- cacheDir/photos/*.jpg    (CameraX capture buffer) -->
+    <cache-path name="photos" path="photos/" />
+    <!-- cacheDir/signatures/*.png (Compose signature export) -->
+    <cache-path name="signatures" path="signatures/" />
+    <!-- filesDir/Downloads      (manual Save to Downloads) -->
+    <files-path name="downloads" path="Downloads/" />
+</paths>

@@ -1,12 +1,16 @@
 package com.threefat.vcts.ui.receipt
 
+import android.widget.Toast
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
-import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -15,15 +19,21 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Button
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -33,18 +43,23 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import com.threefat.vcts.R
 import com.threefat.vcts.domain.model.CollectionRecord
 import com.threefat.vcts.domain.model.Customer
 import com.threefat.vcts.domain.sync.SyncStatus
+import com.threefat.vcts.ui.share.FileShare
 import com.threefat.vcts.ui.theme.DurationEmphasized
 import com.threefat.vcts.ui.theme.EaseOutCubic
 import com.threefat.vcts.ui.theme.MonoFamily
+import java.io.File
 import java.text.NumberFormat
 import java.util.Locale
 import kotlin.math.roundToInt
@@ -53,6 +68,8 @@ import kotlin.math.roundToInt
 @Composable
 fun ReceiptPreviewScreen(
     onDone: () -> Unit,
+    onCapturePhoto: (collectionId: String) -> Unit,
+    onCaptureSignature: (collectionId: String) -> Unit,
     viewModel: ReceiptPreviewViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -68,18 +85,36 @@ fun ReceiptPreviewScreen(
         },
         containerColor = MaterialTheme.colorScheme.background,
     ) { padding ->
-        Body(padding = padding, state = state, onDone = onDone)
+        Body(
+            padding = padding,
+            state = state,
+            onDone = onDone,
+            onCapturePhoto = onCapturePhoto,
+            onCaptureSignature = onCaptureSignature,
+        )
     }
 }
 
 @Composable
-private fun Body(padding: PaddingValues, state: ReceiptUiState, onDone: () -> Unit) {
+private fun Body(
+    padding: PaddingValues,
+    state: ReceiptUiState,
+    onDone: () -> Unit,
+    onCapturePhoto: (String) -> Unit,
+    onCaptureSignature: (String) -> Unit,
+) {
+    val context = LocalContext.current
     val collection = state.collection
+    val canShare = state.pdfFile != null && collection?.syncStatus == SyncStatus.SYNCED
+    val collectionKey = collection?.id ?: collection?.clientUuid
+    val scroll = rememberScrollState()
+
     Column(
         modifier = Modifier
             .fillMaxSize()
             .padding(padding)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .padding(horizontal = 16.dp, vertical = 12.dp)
+            .verticalScroll(scroll),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         StatusBanner(
@@ -93,9 +128,83 @@ private fun Body(padding: PaddingValues, state: ReceiptUiState, onDone: () -> Un
                 collection = collection,
                 customer = state.customer,
             )
+
+            AttachmentsCard(
+                collection = collection,
+                onPhotoClick = { collectionKey?.let(onCapturePhoto) },
+                onSignatureClick = { collectionKey?.let(onCaptureSignature) },
+            )
         }
 
-        Spacer(Modifier.weight(1f))
+        Spacer(Modifier.height(8.dp))
+
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            OutlinedButton(
+                onClick = {
+                    val pdf = state.pdfFile
+                    if (pdf != null) {
+                        FileShare.shareReceiptToWhatsApp(
+                            context = context,
+                            file = pdf,
+                            receiptNo = collection?.receiptNo,
+                            verifyUrl = state.verifyUrl,
+                        )
+                    } else {
+                        Toast.makeText(
+                            context,
+                            context.getString(R.string.capture_status_pending_upload),
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                    }
+                },
+                enabled = canShare,
+                modifier = Modifier.weight(1f),
+            ) {
+                Icon(Icons.Filled.Share, contentDescription = null)
+                Spacer(Modifier.size(6.dp))
+                Text(stringResource(R.string.share_whatsapp))
+            }
+            OutlinedButton(
+                onClick = {
+                    val pdf = state.pdfFile
+                    if (pdf != null) {
+                        FileShare.shareReceiptPdf(
+                            context = context,
+                            file = pdf,
+                            receiptNo = collection?.receiptNo,
+                            verifyUrl = state.verifyUrl,
+                        )
+                    }
+                },
+                enabled = canShare,
+                modifier = Modifier.weight(1f),
+            ) {
+                Icon(Icons.Filled.Share, contentDescription = null)
+                Spacer(Modifier.size(6.dp))
+                Text(stringResource(R.string.share_more))
+            }
+        }
+        OutlinedButton(
+            onClick = {
+                val pdf = state.pdfFile ?: return@OutlinedButton
+                val saved = FileShare.saveReceiptToDownloads(context, pdf)
+                Toast.makeText(
+                    context,
+                    if (saved != null) {
+                        context.getString(R.string.share_saved_to_downloads)
+                    } else {
+                        context.getString(R.string.share_no_apps)
+                    },
+                    Toast.LENGTH_SHORT,
+                ).show()
+            },
+            enabled = canShare,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Icon(Icons.Filled.Download, contentDescription = null)
+            Spacer(Modifier.size(6.dp))
+            Text(stringResource(R.string.share_save_to_downloads))
+        }
 
         Button(
             onClick = onDone,
@@ -105,6 +214,122 @@ private fun Body(padding: PaddingValues, state: ReceiptUiState, onDone: () -> Un
             shape = MaterialTheme.shapes.medium,
         ) {
             Text(stringResource(R.string.receipt_done))
+        }
+    }
+}
+
+@Composable
+private fun AttachmentsCard(
+    collection: CollectionRecord,
+    onPhotoClick: () -> Unit,
+    onSignatureClick: () -> Unit,
+) {
+    ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Text(
+                text = "Capture proof",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                AttachmentTile(
+                    label = stringResource(R.string.capture_attach_photo),
+                    statusLabel = attachmentStatus(
+                        hasUrl = collection.photoUrl != null,
+                        hasLocal = collection.photoLocalPath != null,
+                    ),
+                    icon = Icons.Filled.CameraAlt,
+                    localFile = collection.photoLocalPath?.let(::File),
+                    onClick = onPhotoClick,
+                    modifier = Modifier.weight(1f),
+                )
+                AttachmentTile(
+                    label = stringResource(R.string.capture_attach_signature),
+                    statusLabel = attachmentStatus(
+                        hasUrl = collection.signatureUrl != null,
+                        hasLocal = collection.signatureLocalPath != null,
+                    ),
+                    icon = Icons.Filled.Edit,
+                    localFile = collection.signatureLocalPath?.let(::File),
+                    onClick = onSignatureClick,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun attachmentStatus(hasUrl: Boolean, hasLocal: Boolean): String {
+    val res = when {
+        hasUrl -> R.string.capture_status_uploaded
+        hasLocal -> R.string.capture_status_pending_upload
+        else -> R.string.capture_status_none
+    }
+    return stringResource(res)
+}
+
+@Composable
+private fun AttachmentTile(
+    label: String,
+    statusLabel: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    localFile: File?,
+    onClick: () -> Unit,
+    modifier: Modifier,
+) {
+    Surface(
+        onClick = onClick,
+        modifier = modifier,
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(96.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (localFile != null && localFile.exists()) {
+                    val context = LocalContext.current
+                    AsyncImage(
+                        model = ImageRequest.Builder(context)
+                            .data(localFile)
+                            .build(),
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                } else {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(36.dp),
+                    )
+                }
+            }
+            Text(
+                text = label,
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                text = statusLabel,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }

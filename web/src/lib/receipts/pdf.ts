@@ -1,13 +1,32 @@
-import { degrees, PDFDocument, StandardFonts, rgb } from "pdf-lib";
+import {
+	degrees,
+	PDFDocument,
+	StandardFonts,
+	rgb,
+	type PDFFont,
+	type PDFImage,
+	type PDFPage,
+} from "pdf-lib";
+import QRCode from "qrcode";
 
 /**
- * Lightweight, dependency-only-on-pdf-lib receipt generator. We deliberately
- * keep this server-friendly (no node-canvas, no headless Chromium) because
- * Vercel's serverless runtime is sensitive to large native deps and Phase 3
- * receipts only need to look professional, not glossy. Phase 8 will swap in
- * embedded photos + signatures + Static Map thumbnails on top of the same
- * scaffold.
+ * Lightweight, dependency-only-on-pdf-lib receipt generator. Phase 8
+ * adds optional photo + signature + Static-Map thumbnail + QR-code
+ * embeds; everything stays optional so a receipt without any
+ * attachments still renders the same minimal layout we shipped in
+ * Phase 3.
  */
+
+export interface ReceiptAttachments {
+	/** JPEG / PNG bytes of the customer-side proof photo (optional). */
+	photo?: { bytes: Uint8Array; mime: "image/jpeg" | "image/png" } | null;
+	/** PNG bytes of the customer's signature (optional). */
+	signature?: { bytes: Uint8Array; mime: "image/png" } | null;
+	/** PNG bytes of a Static-Map thumbnail centered on the GPS pin. */
+	mapThumbnail?: { bytes: Uint8Array; mime: "image/png" } | null;
+	/** Tenant logo (PNG / JPEG). Stamped into the header next to legalName. */
+	logo?: { bytes: Uint8Array; mime: "image/png" | "image/jpeg" } | null;
+}
 
 export interface ReceiptInput {
 	tenant: {
@@ -39,6 +58,9 @@ export interface ReceiptInput {
 		accuracyM?: number | null;
 	};
 	reversed?: boolean;
+	attachments?: ReceiptAttachments;
+	/** If set, embeds a QR code that points here in the bottom-right corner. */
+	verifyUrl?: string;
 }
 
 const PAGE_WIDTH = 595.28; // A4 portrait, in points
@@ -78,6 +100,25 @@ export async function renderReceiptPdf(input: ReceiptInput): Promise<Uint8Array>
 	const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
 	const mono = await pdf.embedFont(StandardFonts.Courier);
 
+	const attachments = input.attachments ?? {};
+
+	async function embedImage(
+		entry: { bytes: Uint8Array; mime: string } | null | undefined,
+	) {
+		if (!entry) return null;
+		try {
+			if (entry.mime === "image/png") return await pdf.embedPng(entry.bytes);
+			return await pdf.embedJpg(entry.bytes);
+		} catch {
+			return null;
+		}
+	}
+
+	const logoImage = await embedImage(attachments.logo);
+	const photoImage = await embedImage(attachments.photo);
+	const signatureImage = await embedImage(attachments.signature);
+	const mapImage = await embedImage(attachments.mapThumbnail);
+
 	const ink = rgb(0.07, 0.09, 0.12); // slate-900-ish
 	const muted = rgb(0.42, 0.46, 0.51); // slate-500
 	const accent = rgb(0.13, 0.32, 0.84); // indigo-600 (works in both themes)
@@ -94,17 +135,30 @@ export async function renderReceiptPdf(input: ReceiptInput): Promise<Uint8Array>
 		color: accent,
 	});
 
+	let textX = MARGIN;
+	if (logoImage) {
+		const logoSize = 36;
+		const scale = logoImage.scale(logoSize / Math.max(logoImage.width, logoImage.height));
+		page.drawImage(logoImage, {
+			x: MARGIN,
+			y: y - 36,
+			width: scale.width,
+			height: scale.height,
+		});
+		textX = MARGIN + scale.width + 12;
+	}
+
 	page.drawText(input.tenant.legalName, {
-		x: MARGIN,
-		y: y - 30,
+		x: textX,
+		y: y - 24,
 		size: 18,
 		font: bold,
 		color: ink,
 	});
 	if (input.tenant.address) {
 		page.drawText(input.tenant.address, {
-			x: MARGIN,
-			y: y - 48,
+			x: textX,
+			y: y - 42,
 			size: 9,
 			font: reg,
 			color: muted,
@@ -118,8 +172,8 @@ export async function renderReceiptPdf(input: ReceiptInput): Promise<Uint8Array>
 		.join("   ");
 	if (tenantMeta) {
 		page.drawText(tenantMeta, {
-			x: MARGIN,
-			y: y - 62,
+			x: textX,
+			y: y - 56,
 			size: 9,
 			font: reg,
 			color: muted,
@@ -304,6 +358,86 @@ export async function renderReceiptPdf(input: ReceiptInput): Promise<Uint8Array>
 		});
 	}
 
+	// --- Attachments band: photo + signature + map -------------------------
+	if (photoImage || signatureImage || mapImage) {
+		y -= 28;
+		const slotW = (PAGE_WIDTH - MARGIN * 2 - 24) / 3;
+		const slotH = 130;
+		const slotY = y - slotH;
+
+		drawAttachmentSlot(
+			page,
+			MARGIN,
+			slotY,
+			slotW,
+			slotH,
+			"PHOTO",
+			photoImage,
+			labelOpts,
+		);
+		drawAttachmentSlot(
+			page,
+			MARGIN + slotW + 12,
+			slotY,
+			slotW,
+			slotH,
+			"SIGNATURE",
+			signatureImage,
+			labelOpts,
+		);
+		drawAttachmentSlot(
+			page,
+			MARGIN + slotW * 2 + 24,
+			slotY,
+			slotW,
+			slotH,
+			"GPS PIN",
+			mapImage,
+			labelOpts,
+		);
+		y = slotY - 8;
+	}
+
+	// --- QR code (verify link) - bottom-right above the footer rule --------
+	if (input.verifyUrl) {
+		try {
+			const qrPng = await QRCode.toBuffer(input.verifyUrl, {
+				errorCorrectionLevel: "M",
+				margin: 1,
+				width: 220,
+				color: { dark: "#0F172A", light: "#FFFFFF" },
+			});
+			const qrImage = await pdf.embedPng(qrPng);
+			const qrSize = 72;
+			const qrX = PAGE_WIDTH - MARGIN - qrSize;
+			const qrY = MARGIN + 56;
+			page.drawImage(qrImage, {
+				x: qrX,
+				y: qrY,
+				width: qrSize,
+				height: qrSize,
+			});
+			page.drawText("Scan to verify online", {
+				x: qrX - 100,
+				y: qrY + qrSize - 12,
+				size: 9,
+				font: bold,
+				color: ink,
+			});
+			page.drawText(input.verifyUrl, {
+				x: qrX - 200,
+				y: qrY + qrSize - 28,
+				size: 7,
+				font: mono,
+				color: muted,
+				maxWidth: 200,
+			});
+		} catch {
+			// QR generation should never block receipt rendering. Swallow
+			// any pdf-lib / qrcode errors here so the receipt still ships.
+		}
+	}
+
 	// --- Footer ------------------------------------------------------------
 	const footerY = MARGIN + 24;
 	page.drawLine({
@@ -332,4 +466,66 @@ export async function renderReceiptPdf(input: ReceiptInput): Promise<Uint8Array>
 	});
 
 	return await pdf.save();
+}
+
+/**
+ * Draws a labelled attachment slot. If `image` is missing we still draw
+ * the empty frame + "Not captured" placeholder so the receipt's spatial
+ * layout is consistent across collections.
+ */
+type LabelOpts = {
+	size: number;
+	font: PDFFont;
+	color: ReturnType<typeof rgb>;
+};
+
+function drawAttachmentSlot(
+	page: PDFPage,
+	x: number,
+	y: number,
+	w: number,
+	h: number,
+	label: string,
+	image: PDFImage | null,
+	labelOpts: LabelOpts,
+) {
+	page.drawRectangle({
+		x,
+		y,
+		width: w,
+		height: h,
+		color: rgb(0.99, 0.99, 0.99),
+		borderColor: rgb(0.86, 0.88, 0.92),
+		borderWidth: 0.8,
+	});
+	page.drawText(label, {
+		x: x + 8,
+		y: y + h - 14,
+		size: labelOpts.size,
+		font: labelOpts.font,
+		color: labelOpts.color,
+	});
+
+	if (image) {
+		const padding = 8;
+		const imgW = w - padding * 2;
+		const imgH = h - padding * 2 - 12;
+		const scale = image.scale(
+			Math.min(imgW / image.width, imgH / image.height),
+		);
+		page.drawImage(image, {
+			x: x + (w - scale.width) / 2,
+			y: y + padding,
+			width: scale.width,
+			height: scale.height,
+		});
+	} else {
+		page.drawText("Not captured", {
+			x: x + 8,
+			y: y + h / 2 - 4,
+			size: 9,
+			font: labelOpts.font,
+			color: rgb(0.6, 0.62, 0.66),
+		});
+	}
 }

@@ -4,11 +4,15 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import * as React from "react";
 import {
+  AlertOctagon,
+  BarChart3,
   LayoutDashboard,
   LogOut,
   MapPin,
   Menu,
+  Palette,
   ReceiptText,
+  Route,
   ShieldCheck,
   Users,
   UsersRound,
@@ -48,8 +52,12 @@ const NAV: readonly NavItem[] = [
   { href: "/agents", label: "Agents", icon: UsersRound },
   { href: "/customers", label: "Customers", icon: Users },
   { href: "/collections", label: "Collections", icon: ReceiptText },
+  { href: "/movement", label: "Movement", icon: Route },
+  { href: "/reports", label: "Reports", icon: BarChart3 },
+  { href: "/reviews", label: "Reviews", icon: AlertOctagon },
+  { href: "/audit", label: "Audit", icon: ShieldCheck },
+  { href: "/branding", label: "Branding", icon: Palette },
   { href: "/map", label: "Live map", icon: MapPin, comingSoon: true },
-  { href: "/audit", label: "Audit", icon: ShieldCheck, comingSoon: true },
 ];
 
 export function AppShell({ children }: { children: React.ReactNode }) {

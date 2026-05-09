@@ -45,4 +45,20 @@ data class CollectionEntity(
     @ColumnInfo(name = "sync_status", defaultValue = "synced")
     val syncStatus: String,
     @ColumnInfo(name = "cached_at") val cachedAt: Long,
+    /**
+     * R2 keys (NOT full URLs) for the optional photo + signature attachments
+     * captured during the collection flow. Phase 8 stores these locally so
+     * the offline sync drainer can replay the upload after the row syncs;
+     * the receipt screen also uses them to render captured-state thumbnails.
+     */
+    @ColumnInfo(name = "photo_url") val photoUrl: String? = null,
+    @ColumnInfo(name = "signature_url") val signatureUrl: String? = null,
+    /**
+     * Absolute paths to the on-device JPEG / PNG buffers captured during
+     * the collection flow. They survive across app restarts and feed the
+     * AttachmentsDrainer once the row + the network are both ready.
+     * Cleared after the upload succeeds.
+     */
+    @ColumnInfo(name = "photo_local_path") val photoLocalPath: String? = null,
+    @ColumnInfo(name = "signature_local_path") val signatureLocalPath: String? = null,
 )

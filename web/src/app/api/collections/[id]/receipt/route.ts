@@ -11,9 +11,12 @@ import {
 import { withoutTenant, withTenant } from "@/db/tenant";
 import { requireAuth } from "@/lib/auth/context";
 import { forbidden, notFound, toResponse } from "@/lib/errors";
-import { renderReceiptPdf } from "@/lib/receipts/pdf";
+import { fetchStaticMapPng } from "@/lib/maps/static";
+import { readBranding } from "@/lib/tenants/branding";
+import { publicReceiptUrl } from "@/lib/receipts/public-url";
+import { renderReceiptPdf, type ReceiptAttachments } from "@/lib/receipts/pdf";
 import {
-	objectExists,
+	getObjectBytes,
 	presignGetUrl,
 	putObject,
 	r2Enabled,
@@ -21,15 +24,6 @@ import {
 } from "@/lib/storage/r2";
 
 export const runtime = "nodejs";
-
-type TenantBranding = {
-	branding?: {
-		legalName?: string;
-		address?: string;
-		gstin?: string;
-		phone?: string;
-	};
-};
 
 export async function GET(
 	req: NextRequest,
@@ -92,61 +86,74 @@ export async function GET(
 		);
 		if (!meta) throw notFound("Tenant or agent metadata missing");
 
-		const branding = (meta.tenant.settings as TenantBranding | null)
-			?.branding;
+		const branding = readBranding(meta.tenant.settings);
 		const tenantInfo = {
-			legalName: branding?.legalName ?? meta.tenant.name,
-			address: branding?.address,
-			gstin: branding?.gstin,
-			phone: branding?.phone,
+			legalName: branding.legalName ?? meta.tenant.name,
+			address: branding.address,
+			gstin: branding.gstin,
+			phone: branding.phone,
 		};
+
+		const verifyUrl = publicReceiptUrl({
+			receiptNo: data.collection.receiptNo,
+			origin:
+				url.origin && !url.origin.includes("localhost")
+					? url.origin
+					: undefined,
+		});
+
+		// Best-effort fetch of the bytes we want to embed in the PDF. R2
+		// objects might not exist yet (the device only uploads after the
+		// receipt becomes available); the static map call hits Google
+		// directly and is rate-limited at the project level. Each fetch
+		// failure is silently swallowed - the renderer paints "Not
+		// captured" placeholders for missing attachments.
+		const attachments: ReceiptAttachments = {};
+		if (r2Enabled() && data.collection.photoUrl) {
+			const bytes = await getObjectBytes(data.collection.photoUrl);
+			if (bytes) {
+				attachments.photo = {
+					bytes,
+					mime: data.collection.photoUrl.endsWith(".png")
+						? "image/png"
+						: "image/jpeg",
+				};
+			}
+		}
+		if (r2Enabled() && data.collection.signatureUrl) {
+			const bytes = await getObjectBytes(data.collection.signatureUrl);
+			if (bytes) attachments.signature = { bytes, mime: "image/png" };
+		}
+		if (r2Enabled() && branding.logoUrl) {
+			// Logo URL is stored as an R2 key (or absolute URL); we only
+			// embed when it's a key we can look up.
+			const looksLikeKey = branding.logoUrl.startsWith("t/");
+			const logoBytes = looksLikeKey
+				? await getObjectBytes(branding.logoUrl)
+				: await fetch(branding.logoUrl)
+						.then((r) => (r.ok ? r.arrayBuffer() : null))
+						.then((b) => (b ? Buffer.from(b) : null))
+						.catch(() => null);
+			if (logoBytes) {
+				attachments.logo = {
+					bytes: logoBytes,
+					mime: branding.logoUrl.endsWith(".jpg") || branding.logoUrl.endsWith(".jpeg")
+						? "image/jpeg"
+						: "image/png",
+				};
+			}
+		}
+		const mapBytes = await fetchStaticMapPng({
+			lat: data.collection.collectionLat,
+			lng: data.collection.collectionLng,
+			zoom: 16,
+		});
+		if (mapBytes) attachments.mapThumbnail = { bytes: mapBytes, mime: "image/png" };
 
 		const key = receiptKey(meta.tenant.slug, data.collection.receiptNo);
 
-		// --- R2 path: cache PDF on first request, serve presigned URL ------
-		if (r2Enabled()) {
-			let exists = await objectExists(key);
-			if (!exists) {
-				const pdfBytes = await renderReceiptPdf({
-					tenant: tenantInfo,
-					receiptNo: data.collection.receiptNo,
-					collectedAt: data.collection.collectedAt,
-					customer: {
-						name: data.customer.name,
-						code: data.customer.code,
-						address: data.customer.address,
-						phone: data.customer.phone,
-					},
-					agent: {
-						name: meta.agentName,
-						agentCode: meta.agentCode,
-					},
-					amount: data.collection.amount,
-					paymentMode: data.collection.paymentMode,
-					refNo: data.collection.refNo,
-					chequeDate: data.collection.chequeDate as Date | null,
-					remarks: data.collection.remarks,
-					location: {
-						lat: data.collection.collectionLat,
-						lng: data.collection.collectionLng,
-						accuracyM: data.collection.gpsAccuracyM,
-					},
-					reversed: data.reversed,
-				});
-				await putObject(key, Buffer.from(pdfBytes), "application/pdf");
-				exists = true;
-			}
-
-			const signed = await presignGetUrl(key);
-			if (wantPresign) {
-				return NextResponse.json({ url: signed });
-			}
-			// 302 to the presigned URL keeps the browser tab simple.
-			return NextResponse.redirect(signed, { status: 302 });
-		}
-
-		// --- Inline streaming fallback (no R2 configured) ------------------
-		const pdfBytes = await renderReceiptPdf({
+		// Stable receipt input - reused by the cached / inline branches.
+		const baseInput = {
 			tenant: tenantInfo,
 			receiptNo: data.collection.receiptNo,
 			collectedAt: data.collection.collectedAt,
@@ -156,7 +163,10 @@ export async function GET(
 				address: data.customer.address,
 				phone: data.customer.phone,
 			},
-			agent: { name: meta.agentName, agentCode: meta.agentCode },
+			agent: {
+				name: meta.agentName,
+				agentCode: meta.agentCode,
+			},
 			amount: data.collection.amount,
 			paymentMode: data.collection.paymentMode,
 			refNo: data.collection.refNo,
@@ -168,7 +178,28 @@ export async function GET(
 				accuracyM: data.collection.gpsAccuracyM,
 			},
 			reversed: data.reversed,
-		});
+			attachments,
+			verifyUrl,
+		};
+
+		// --- R2 path: re-render every time so attachments/branding stay
+		// in sync with the latest writes. The cached PDF would otherwise
+		// go stale the moment the agent uploaded a photo or signature
+		// after the receipt was first viewed. PDF generation is < 1s so
+		// the round-trip cost is acceptable.
+		if (r2Enabled()) {
+			const pdfBytes = await renderReceiptPdf(baseInput);
+			await putObject(key, Buffer.from(pdfBytes), "application/pdf");
+
+			const signed = await presignGetUrl(key);
+			if (wantPresign) {
+				return NextResponse.json({ url: signed });
+			}
+			return NextResponse.redirect(signed, { status: 302 });
+		}
+
+		// --- Inline streaming fallback (no R2 configured) ------------------
+		const pdfBytes = await renderReceiptPdf(baseInput);
 
 		const filename = `${data.collection.receiptNo.replace(/\//g, "-")}.pdf`;
 		// Buffer is fine; pdf-lib returns a Uint8Array which Response accepts

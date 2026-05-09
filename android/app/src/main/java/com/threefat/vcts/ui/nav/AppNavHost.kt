@@ -18,6 +18,8 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.threefat.vcts.ui.auth.LoginScreen
+import com.threefat.vcts.ui.capture.PhotoCaptureScreen
+import com.threefat.vcts.ui.capture.SignaturePadScreen
 import com.threefat.vcts.ui.collection.CollectionFormScreen
 import com.threefat.vcts.ui.customers.CustomerDetailScreen
 import com.threefat.vcts.ui.customers.CustomersListScreen
@@ -150,6 +152,36 @@ fun AppNavHost(
                         launchSingleTop = true
                     }
                 },
+                onCapturePhoto = { collectionId ->
+                    navController.navigate(Routes.Capture.photo(collectionId))
+                },
+                onCaptureSignature = { collectionId ->
+                    navController.navigate(Routes.Capture.signature(collectionId))
+                },
+            )
+        }
+
+        composable(
+            route = Routes.Capture.PhotoPattern,
+            arguments = listOf(
+                navArgument(Routes.Capture.ArgCollectionId) { type = NavType.StringType },
+            ),
+        ) {
+            PhotoCaptureScreen(
+                onCancel = { navController.popBackStack() },
+                onCaptured = { navController.popBackStack() },
+            )
+        }
+
+        composable(
+            route = Routes.Capture.SignaturePattern,
+            arguments = listOf(
+                navArgument(Routes.Capture.ArgCollectionId) { type = NavType.StringType },
+            ),
+        ) {
+            SignaturePadScreen(
+                onCancel = { navController.popBackStack() },
+                onSaved = { navController.popBackStack() },
             )
         }
 

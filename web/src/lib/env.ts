@@ -69,6 +69,13 @@ const EnvSchema = z.object({
 	VISIT_MIN_DWELL_SECONDS: z.coerce.number().int().min(30).max(3600).default(180),
 	VISIT_RECOMPUTE_LOOKBACK_MIN: z.coerce.number().int().min(15).max(1440).default(60),
 	VISIT_COLLECTION_TOLERANCE_MIN: z.coerce.number().int().min(1).max(60).default(5),
+
+	// --- Phase 8: public verification URL embedded in QR codes / share text.
+	// On Vercel this is the production domain (e.g. `https://example.com`);
+	// when unset the receipt route falls back to a relative `/r/...` link
+	// which still works inside the admin portal but is unhappy in PDFs.
+	PUBLIC_BASE_URL: z.preprocess(emptyToUndef, z.string().url().optional()),
+	NEXT_PUBLIC_PUBLIC_BASE_URL: z.preprocess(emptyToUndef, z.string().url().optional()),
 });
 
 function load(): z.infer<typeof EnvSchema> {

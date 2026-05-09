@@ -2,6 +2,7 @@ package com.threefat.vcts.di
 
 import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
 import com.threefat.vcts.BuildConfig
+import com.threefat.vcts.data.remote.AttachmentsApi
 import com.threefat.vcts.data.remote.AuthApi
 import com.threefat.vcts.data.remote.CollectionsApi
 import com.threefat.vcts.data.remote.CustomersApi
@@ -89,6 +90,27 @@ object NetworkModule {
         .authenticator(tokenRefreshAuthenticator)
         .build()
 
+    /**
+     * Phase 8 - a stripped-down client used to PUT bytes directly to a
+     * presigned Cloudflare R2 URL. We deliberately skip [AuthInterceptor]
+     * (the presigned URL embeds its own auth in the query string) and the
+     * cert pinner (R2 hosts a different SPKI than our API).
+     *
+     * Larger write timeout so a slow uplink doesn't drop a 1-2 MB photo.
+     */
+    @Provides
+    @Singleton
+    @R2UploadClient
+    fun provideR2UploadClient(
+        loggingInterceptor: HttpLoggingInterceptor,
+    ): OkHttpClient = OkHttpClient.Builder()
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(60, TimeUnit.SECONDS)
+        .writeTimeout(120, TimeUnit.SECONDS)
+        .retryOnConnectionFailure(true)
+        .addInterceptor(loggingInterceptor)
+        .build()
+
     @Provides
     @Singleton
     fun provideRetrofit(client: OkHttpClient, json: Json): Retrofit =
@@ -121,4 +143,9 @@ object NetworkModule {
     @Singleton
     fun provideLocationLogsApi(retrofit: Retrofit): LocationLogsApi =
         retrofit.create(LocationLogsApi::class.java)
+
+    @Provides
+    @Singleton
+    fun provideAttachmentsApi(retrofit: Retrofit): AttachmentsApi =
+        retrofit.create(AttachmentsApi::class.java)
 }

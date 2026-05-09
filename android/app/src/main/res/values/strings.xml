@@ -115,8 +115,41 @@
     <string name="tracking_background_open_settings">Open settings</string>
     <string name="tracking_background_skip">Not now</string>
 
+    <!-- Phase 8 - Capture flow -->
+    <string name="capture_photo_title">Photo proof</string>
+    <string name="capture_signature_title">Customer signature</string>
+    <string name="capture_take_photo">Take photo</string>
+    <string name="capture_flip">Flip</string>
+    <string name="capture_signature_hint">Sign in the box below</string>
+    <string name="capture_signature_clear">Clear</string>
+    <string name="capture_signature_save">Save</string>
+    <string name="capture_signature_save_failed">Couldn\'t save signature. Try again.</string>
+    <string name="capture_permission_title">Camera permission needed</string>
+    <string name="capture_permission_message">Allow camera access so we can capture a quick proof photo for the receipt.</string>
+    <string name="capture_permission_grant">Allow camera</string>
+    <string name="capture_attach_photo">Add photo proof</string>
+    <string name="capture_attach_signature">Add signature</string>
+    <string name="capture_replace_photo">Retake photo</string>
+    <string name="capture_replace_signature">Re-sign</string>
+    <string name="capture_status_uploading">Uploading proof…</string>
+    <string name="capture_status_uploaded">Proof uploaded.</string>
+    <string name="capture_status_pending_upload">Captured, waiting to upload.</string>
+    <string name="capture_status_none">No proof captured. Optional but recommended.</string>
+
+    <!-- Phase 8 - Share -->
+    <string name="share_via">Share receipt</string>
+    <string name="share_subject">VCTS receipt %1$s</string>
+    <string name="share_no_apps">No apps available to share this PDF on this device.</string>
+    <string name="share_text_template">Receipt {receipt}\nVerify online: {url}</string>
+    <string name="share_save_to_downloads">Save to device</string>
+    <string name="share_saved_to_downloads">Saved a copy under app Downloads.</string>
+    <string name="share_whatsapp">WhatsApp</string>
+    <string name="share_more">More…</string>
+
     <!-- Common -->
     <string name="common_back">Back</string>
     <string name="common_retry">Retry</string>
     <string name="common_close">Close</string>
+    <string name="common_cancel">Cancel</string>
+    <string name="common_save">Save</string>
 </resources>

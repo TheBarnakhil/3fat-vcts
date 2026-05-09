@@ -30,8 +30,27 @@ data class CollectionRecord(
     val collectedAtIso: String,
     val supervisorReview: Boolean,
     val syncStatus: SyncStatus = SyncStatus.SYNCED,
+    /**
+     * Phase 8 - R2 keys (NOT URLs) for the optional photo + signature
+     * attachments. Both null means "not captured"; the receipt UI shows
+     * a "Not captured" placeholder for either side.
+     */
+    val photoUrl: String? = null,
+    val signatureUrl: String? = null,
+    /**
+     * Phase 8 - on-device file paths for not-yet-uploaded attachments.
+     * The drainer clears these once the bytes land in R2.
+     */
+    val photoLocalPath: String? = null,
+    val signatureLocalPath: String? = null,
 ) {
     val isPending: Boolean get() = syncStatus != SyncStatus.SYNCED
+    val hasPendingAttachmentUpload: Boolean
+        get() = photoLocalPath != null || signatureLocalPath != null
+    val hasAnyAttachment: Boolean
+        get() =
+            photoUrl != null || signatureUrl != null ||
+                photoLocalPath != null || signatureLocalPath != null
 }
 
 enum class PaymentMode(val wireValue: String, val display: String) {

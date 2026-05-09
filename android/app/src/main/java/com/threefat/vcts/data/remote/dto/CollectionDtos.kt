@@ -57,6 +57,9 @@ data class CollectionRowDto(
     val gpsAccuracyM: Double? = null,
     val collectedAt: String,
     val supervisorReview: Boolean = false,
+    /** Phase 8 - R2 keys (never absolute URLs) for capture proof. */
+    val photoUrl: String? = null,
+    val signatureUrl: String? = null,
 )
 
 @Serializable

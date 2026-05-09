@@ -84,6 +84,8 @@ internal fun CollectionRowDto.toEntity(now: Long): CollectionEntity = Collection
     supervisorReview = supervisorReview,
     syncStatus = SyncStatus.SYNCED.wire,
     cachedAt = now,
+    photoUrl = photoUrl,
+    signatureUrl = signatureUrl,
 )
 
 internal fun SyncCollectionDto.toEntity(now: Long): CollectionEntity = CollectionEntity(
@@ -104,6 +106,8 @@ internal fun SyncCollectionDto.toEntity(now: Long): CollectionEntity = Collectio
     supervisorReview = supervisorReview,
     syncStatus = SyncStatus.SYNCED.wire,
     cachedAt = now,
+    photoUrl = photoUrl,
+    signatureUrl = signatureUrl,
 )
 
 internal fun CollectionEntity.toDomain(): CollectionRecord = CollectionRecord(
@@ -123,4 +127,8 @@ internal fun CollectionEntity.toDomain(): CollectionRecord = CollectionRecord(
     collectedAtIso = collectedAt,
     supervisorReview = supervisorReview,
     syncStatus = SyncStatus.fromWire(syncStatus),
+    photoUrl = photoUrl,
+    signatureUrl = signatureUrl,
+    photoLocalPath = photoLocalPath,
+    signatureLocalPath = signatureLocalPath,
 )

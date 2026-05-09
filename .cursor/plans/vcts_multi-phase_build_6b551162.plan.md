@@ -28,15 +28,18 @@ overview: Deliver the multi-tenant Verified Collection Tracking System in 11 inc
     status: completed
   - id: phase7
     content: Phase 7 - Location logging + visit-validation worker + manager movement replay API
-    status: in_progress
+    status: completed
+  - id: phase7_followup
+    content: "Phase 7.1 follow-up - Startup POST_NOTIFICATIONS prompt so the active-duty notification channel (and any future channels) is never silently blocked on Android 13+"
+    status: completed
   - id: phase8
     content: Phase 8 - Photo + signature capture, tenant-prefixed R2 upload via presigned URLs, share sheet, online verification page
-    status: pending
+    status: completed
   - id: phase9
-    content: Phase 9 - Web live map (SSE), movement replay, collections log, audit viewer, reports/exports
-    status: pending
+    content: Phase 9 - Manager surfaces (movement replay, supervisor reviews, audit viewer, reports, collections log enhancements). Live-SSE map deferred to Phase 10.
+    status: completed
   - id: phase10
-    content: "Phase 10 - Hardening: OWASP pass, rate limits, device binding, ProGuard, release APK"
+    content: "Phase 10 - Hardening: OWASP pass, rate limits, device binding, ProGuard, release APK + carry-over live-SSE map + customer-ledger CSV/PDF export"
     status: pending
   - id: phase11
     content: "Phase 11 - Platform admin console + self-serve tenant provisioning (build later)"
@@ -372,6 +375,16 @@ Out-of-scope work that landed alongside Phase 6 because it surfaced during dogfo
 
 ---
 
+## Phase 7.1 - Startup notification permission prompt
+
+Surfaced during dogfooding: on Android 13+ the persistent active-duty notification stayed invisible because `POST_NOTIFICATIONS` is denied by default and we never asked for it. Going forward we'll have other channels too (sync errors, supervisor reviews, manager pings), so we want a single seam that keeps notifications enabled.
+
+- `MainActivity.onStart()` (API 33+) now checks `POST_NOTIFICATIONS` and, if denied, launches the system request dialog via `registerForActivityResult(RequestPermission)`. Runs every time the activity comes to the foreground until granted, then no-ops.
+- Pre-API-33 builds skip the check entirely (the permission doesn't exist).
+- "Don't allow + Don't ask again" still requires the user to flip the toggle in system settings; we don't deep-link there yet, but the channel itself remains created so once they re-enable it, every queued notification (active duty + future) just works.
+
+---
+
 ## Phase 8 - Receipt polish: sharing, photo, signature
 
 **Goal:** Agent captures photo + signature, shares the receipt on WhatsApp in 2 taps. All artifacts stored under tenant-prefixed R2 keys.
@@ -382,6 +395,40 @@ Out-of-scope work that landed alongside Phase 6 because it surfaced during dogfo
 - Receipt header renders `tenants.settings.branding` (logo + legal block). Phase 1 will ship placeholder branding ("3FAT Demo Co." for Acme, "Globex Trading Ltd." for Globex) so we can see per-tenant branding working end-to-end.
 - Share sheet: WhatsApp (deep link with pre-filled text + PDF), SMS (short link), Email (intent with attachment), Save to Downloads
 - Online verification page at `/r/[tenantSlug]/[receiptNo]` (public read-only view with QR-code link embedded in PDF). Tenant slug in URL so each tenant gets a branded verification page and there are no ID collisions across tenants.
+
+### What actually shipped in Phase 8
+
+**Backend (Next.js)**
+
+- New `web/src/lib/storage/r2.ts` helpers: `photoKey`, `signatureKey`, `brandingLogoKey`, `presignPutUrl`, `getObjectBytes`. Direct R2 PUT/GET stays out of the Vercel function path entirely.
+- `POST /api/collections/{id}/attachments/presign` issues a tenant-prefixed PUT URL (`t/{slug}/photos/{collectionId}.jpg`) after verifying the agent owns the row. Whitelists `image/(jpeg|png|webp)` content types.
+- `PATCH /api/collections/{id}/attachments` persists `photoUrl` / `signatureUrl` keys (NOT full URLs) on the row and writes a `collection.attached` audit event. Idempotent; calling twice with the same key is a no-op.
+- New `web/src/lib/tenants/branding.ts` parses `tenants.settings.branding` (`legalName`, `address`, `gstin`, `phone`, `logoUrl`, `accentHsl`).
+- `GET|PATCH /api/tenants/me` for super-admin branding edits and `POST /api/tenants/me/branding/logo/presign` for logo upload (lands at `t/{slug}/brand/logo.{ext}`). Both audit-logged.
+- Receipt PDF renderer (`web/src/lib/receipts/pdf.ts`) now embeds photo, signature, static-map thumbnail, branding logo + legal block, and a QR code linking to the public verification URL. PDFs are re-rendered on every `GET /api/collections/{id}/receipt` request so attachments + branding stay fresh.
+- `GET /r/[...path]` public verification page (no auth) renders branding header, collection metadata, photo + signature thumbnails (via short-lived presigned R2 reads), static map, and a QR code. Tenant slug is the leading path segment so URLs look like `/r/acme/A001/FY26/00042`.
+- `GET /api/sync/pull` now ships `photoUrl` + `signatureUrl` on each `collections` row so devices that pull never overwrite their local attachment state.
+
+**Web admin**
+
+- New "Branding" sidebar entry (super-admin only) that edits legal name, address, GSTIN, phone, accent HSL, and uploads a logo via presigned R2 PUT. Lazy-draft form pattern keeps state in sync with server response without `setState-in-effect`.
+- Customers, dashboard, and tenant menu picks up `legalNameFor(branding)` so the demo placeholders ("3FAT Demo Co." / "Globex Trading Ltd.") render even before super-admins customise their branding.
+
+**Android**
+
+- New Compose screens: `PhotoCaptureScreen` (CameraX preview, capture, lens flip, runtime CAMERA permission flow) and `SignaturePadScreen` (custom Canvas signature pad, clear, save → PNG export).
+- `AttachmentsRepository` writes captured bytes to `cacheDir/{photos,signatures}/` and stamps the local path onto the row via `CollectionDao.updateLocalAttachmentPaths()`. Capture immediately calls `SyncScheduler.requestImmediate()` so a connected device uploads within seconds.
+- New Room columns `photo_local_path` + `signature_local_path` (Room v3 → v4 migration). The domain model exposes `hasPendingAttachmentUpload` for UI state.
+- `AttachmentsPushDrainer` runs after `CollectionsPushDrainer` inside `SyncRepository.syncOnce()`. Per-collection it: presigns → PUTs bytes via a dedicated `@R2UploadClient` OkHttpClient (no auth interceptor, no cert pinner; presigned URL carries its own auth) → PATCHes the collection. Permanent (4xx, except 408/429) failures clear the local pointer; transient failures retry next worker tick.
+- `ReceiptPreviewScreen` grows a "Capture proof" card with photo + signature tiles (status: none / waiting to upload / uploaded), a WhatsApp share button, a generic share-sheet button, a "Save to device" button, and the existing Done button. Share text + subject pull `verifyUrl` from `BuildConfig.API_BASE_URL` and the receipt number, URL-encoded segment by segment to match the public route.
+- `FileShare` exposes `shareReceiptPdf`, `shareReceiptToWhatsApp`, `saveReceiptToDownloads` and a manifest-declared `FileProvider` (`<package>.fileprovider`) over `cache/`, `files/Downloads/`, and the new `cache/{photos,signatures}/`.
+- `build.gradle.kts` adds CameraX (core/camera2/lifecycle/view), Coil Compose, and ZXing core. `versionName` bumped to `0.8.0`.
+
+**Limits / next-up**
+
+- The on-device PDF renderer (`ReceiptPdfRenderer`) does NOT yet embed photo / signature / map / QR; the share sheet always shares the server-rendered PDF (which does embed everything). The on-device PDF stays as the offline-only fallback. Mirroring the web template is tracked for Phase 9.
+- Photos are always uploaded as `image/jpeg`; HEIC capture isn't enabled (CameraX defaults to JPEG on all current devices we support).
+- Background photo upload is gated on the row already having a server id (i.e. the collection has synced). If the agent captures a photo before the row syncs, the drainer skips it until the row rekeys from `clientUuid` to `id`.
 
 ---
 
@@ -396,6 +443,35 @@ Out-of-scope work that landed alongside Phase 6 because it surfaced during dogfo
 - Customer ledger page with CSV/PDF export (jsPDF + XLSX)
 - Audit trail viewer with chain-integrity status and export
 - Reports: daily/weekly/monthly summaries (Recharts), agent performance
+
+### What actually shipped in Phase 9
+
+**New backend endpoints**
+
+- `GET /api/reviews?status=pending|resolved|all` — joined view of `supervisor_reviews + collections + customers + users`. Restricted to manager / super-admin / auditor.
+- `PATCH /api/reviews/{id}` — `{ action: "resolve" | "reopen", note? }`. Stamps `resolved_at` + `resolved_by`, re-derives `collections.supervisor_review` from "any open reviews remain?", and writes a `review.resolve` / `review.reopen` audit event.
+- `GET /api/audit?cursor=<seq>&limit=&action=` — cursor-paginated read of `audit_trail` (RLS-scoped). Resolves actor names from the auth-only `users` table; never returns row HMACs.
+- `GET /api/audit/verify` — runs `verifyChain()` over the entire tenant's chain and returns `{ ok, rows, brokenAtSeq?, reason? }`. Restricted to super-admin / auditor.
+- `GET /api/reports/summary?from=&to=` — three SQL aggregates in one round-trip: `byDay` (UTC), `byAgent` (with names from `users`), `byMode`, plus tenant totals (count / amount / supervisorReview).
+
+**New web pages**
+
+- `/movement` — agent + day picker, Google Map with polyline (start/end pins), customer fence circles for the selected agent, plus a sidebar showing fix count, visit count, total on-site time, and a per-visit timeline (start/end times, dwell, "collected" vs "visit only" badge). Reuses the existing `GET /api/agents/:id/movement` API from Phase 7.
+- `/reviews` — pending / resolved tabs over the new `/api/reviews` endpoint. Each card shows reason badge (balance-drift / stale-replay / unverified-visit), receipt + customer + agent + amount, raised time, and a Resolve / Reopen button gated to manager + super-admin. The flag payload is rendered as a collapsed JSON block for context.
+- `/audit` — paginated table over `/api/audit` with cursor-based "Load more". Action filter (exact match), CSV export of the visible window, click a row to expand the before/after JSON diff, and a "Verify chain" button (super-admin / auditor) that surfaces the chain integrity card (ok / broken-at-seq / reason).
+- `/reports` — date-range KPI cards (collections, recovered amount, flagged for review), `LineChart` of daily collections, `PieChart` of payment modes, and a horizontal `BarChart` of top-10 agents by amount. CSV export of the daily bucket. Recharts (`pnpm add recharts`) is the new dep.
+- `/collections` (enhanced, not new) — text search across receipt no, customer, customer code, agent name + code; payment-mode filter; "all / flagged / clean" filter; GPS-verify badge (≤ 50 m accuracy = green check); supervisor-review badge column; CSV export of the filtered window.
+
+**Other changes**
+
+- `AppShell` sidebar grew Movement / Reports / Reviews / Audit entries and demoted Live map to "soon"; the Branding link moved below the manager surfaces.
+- `AuthUser.role` widened to include `"auditor"` (the JWT layer already allowed it; the client store was the last hold-out).
+- Lint + `tsc --noEmit` are clean across the whole web app; the only outstanding warning is the pre-existing `useReactTable()` "incompatible library" notice from React Compiler.
+
+**What was deferred**
+
+- The live-SSE pin map at `/map` and the matching `/api/stream/agent-locations` channel. The data is ready (Phase 7 already pushes batches every 5 minutes) and movement replay covers the manager use case for now; the live view is wired into Phase 10 alongside Crashlytics + Analytics so we don't ship a half-instrumented streaming endpoint.
+- Customer-ledger CSV/PDF export. The collections log already exports CSV; the per-customer ledger is small enough that paging through it from the customer detail dialog is acceptable until somebody asks for it.
 
 ---
 

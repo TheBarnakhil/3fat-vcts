@@ -55,6 +55,24 @@ export function receiptKey(tenantSlug: string, receiptNo: string): string {
 	return `t/${tenantSlug}/receipts/${receiptNo}.pdf`;
 }
 
+/**
+ * Phase 8 attachment keys. We deliberately avoid putting the receipt
+ * number in the path because the device captures + uploads the photo /
+ * signature *before* the server has issued a receipt number (offline
+ * queue path). The collection id is the stable handle.
+ */
+export function photoKey(tenantSlug: string, collectionId: string): string {
+	return `t/${tenantSlug}/photos/${collectionId}.jpg`;
+}
+
+export function signatureKey(tenantSlug: string, collectionId: string): string {
+	return `t/${tenantSlug}/signatures/${collectionId}.png`;
+}
+
+export function brandingLogoKey(tenantSlug: string): string {
+	return `t/${tenantSlug}/branding/logo.png`;
+}
+
 export async function objectExists(key: string): Promise<boolean> {
 	try {
 		await client().send(
@@ -102,4 +120,59 @@ export async function presignGetUrl(
 		new GetObjectCommand({ Bucket: env.R2_BUCKET!, Key: key }),
 		{ expiresIn: ttlSeconds },
 	);
+}
+
+/**
+ * Issues a presigned PUT URL the device can use to upload a photo /
+ * signature directly to R2 without round-tripping the binary through
+ * the Next.js API. We pin Content-Type at sign time so the device
+ * cannot smuggle in a wrong-typed object; `Content-Length` is only
+ * pinned by the SDK if the caller supplies it (we don't).
+ */
+export async function presignPutUrl(
+	key: string,
+	contentType: string,
+	ttlSeconds = env.RECEIPT_PRESIGN_TTL_SECONDS,
+): Promise<string> {
+	return getSignedUrl(
+		client(),
+		new PutObjectCommand({
+			Bucket: env.R2_BUCKET!,
+			Key: key,
+			ContentType: contentType,
+		}),
+		{ expiresIn: ttlSeconds, signableHeaders: new Set(["content-type"]) },
+	);
+}
+
+/**
+ * Pulls an object out of R2 as a Buffer. Used by the PDF renderer to
+ * embed a photo / signature inline; the verification page also uses
+ * it to render the signed thumbnail. Returns `null` if the object is
+ * missing rather than throwing - receipts without attachments must
+ * still render.
+ */
+export async function getObjectBytes(key: string): Promise<Buffer | null> {
+	try {
+		const res = await client().send(
+			new GetObjectCommand({ Bucket: env.R2_BUCKET!, Key: key }),
+		);
+		const body = res.Body;
+		if (!body) return null;
+		const chunks: Buffer[] = [];
+		for await (const chunk of body as AsyncIterable<Uint8Array>) {
+			chunks.push(Buffer.from(chunk));
+		}
+		return Buffer.concat(chunks);
+	} catch (err) {
+		const status = (err as { $metadata?: { httpStatusCode?: number } })
+			?.$metadata?.httpStatusCode;
+		if (
+			status === 404 ||
+			(err && (err as { name?: string }).name === "NoSuchKey")
+		) {
+			return null;
+		}
+		throw err;
+	}
 }

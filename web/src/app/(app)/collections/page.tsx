@@ -4,10 +4,13 @@ import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
 import {
+	AlertTriangle,
 	Download,
+	FileDown,
 	LoaderCircle,
 	MapPin,
 	ReceiptText,
+	ShieldCheck,
 	Undo2,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -25,7 +28,15 @@ import {
 	DialogHeader,
 	DialogTitle,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { api, isApiError } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth-store";
@@ -80,6 +91,10 @@ export default function CollectionsPage() {
 	const [reverseTarget, setReverseTarget] = React.useState<Collection | null>(
 		null,
 	);
+
+	const [search, setSearch] = React.useState("");
+	const [modeFilter, setModeFilter] = React.useState<string>("all");
+	const [reviewFilter, setReviewFilter] = React.useState<string>("all");
 
 	const { data, isLoading } = useQuery<CollectionsResponse>({
 		queryKey: ["collections"],
@@ -153,14 +168,44 @@ export default function CollectionsPage() {
 			{
 				header: "GPS",
 				accessorKey: "gpsAccuracyM",
-				cell: ({ row }) => (
-					<div className="flex items-center gap-1 text-xs text-muted-foreground">
-						<MapPin className="size-3" />
-						{row.original.gpsAccuracyM != null
-							? `±${row.original.gpsAccuracyM.toFixed(0)}m`
-							: "—"}
-					</div>
-				),
+				cell: ({ row }) => {
+					const acc = row.original.gpsAccuracyM;
+					const verified = acc != null && acc <= 50;
+					return (
+						<div className="flex items-center gap-1 text-xs">
+							{verified ? (
+								<ShieldCheck className="size-3 text-emerald-500" />
+							) : (
+								<MapPin className="size-3 text-muted-foreground" />
+							)}
+							<span
+								className={
+									verified
+										? "text-emerald-600 dark:text-emerald-400"
+										: "text-muted-foreground"
+								}
+							>
+								{acc != null ? `±${acc.toFixed(0)}m` : "—"}
+							</span>
+						</div>
+					);
+				},
+			},
+			{
+				header: "Status",
+				accessorKey: "supervisorReview",
+				cell: ({ row }) =>
+					row.original.supervisorReview ? (
+						<Badge
+							variant="outline"
+							className="border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300"
+						>
+							<AlertTriangle className="mr-1 size-3" />
+							Review
+						</Badge>
+					) : (
+						<span className="text-xs text-muted-foreground">—</span>
+					),
 			},
 			{
 				id: "actions",
@@ -202,7 +247,73 @@ export default function CollectionsPage() {
 		[canReverse],
 	);
 
-	const rows = data?.collections ?? [];
+	const allRows = React.useMemo(() => data?.collections ?? [], [data]);
+
+	const filteredRows = React.useMemo(() => {
+		const q = search.trim().toLowerCase();
+		return allRows.filter((c) => {
+			if (modeFilter !== "all" && c.paymentMode !== modeFilter) return false;
+			if (reviewFilter === "review" && !c.supervisorReview) return false;
+			if (reviewFilter === "clean" && c.supervisorReview) return false;
+			if (q.length === 0) return true;
+			return (
+				c.receiptNo.toLowerCase().includes(q) ||
+				c.customerName.toLowerCase().includes(q) ||
+				(c.customerCode ?? "").toLowerCase().includes(q) ||
+				(c.agentName ?? "").toLowerCase().includes(q) ||
+				(c.agentCode ?? "").toLowerCase().includes(q)
+			);
+		});
+	}, [allRows, search, modeFilter, reviewFilter]);
+
+	const exportCsv = () => {
+		if (filteredRows.length === 0) {
+			toast.info("Nothing to export.");
+			return;
+		}
+		const headers = [
+			"receiptNo",
+			"collectedAt",
+			"customerName",
+			"customerCode",
+			"amount",
+			"paymentMode",
+			"refNo",
+			"agentName",
+			"agentCode",
+			"lat",
+			"lng",
+			"gpsAccuracyM",
+			"supervisorReview",
+		];
+		const rows = filteredRows.map((c) =>
+			[
+				c.receiptNo,
+				c.collectedAt,
+				c.customerName,
+				c.customerCode ?? "",
+				c.amount.toFixed(2),
+				c.paymentMode,
+				c.refNo ?? "",
+				c.agentName ?? "",
+				c.agentCode ?? "",
+				c.collectionLat,
+				c.collectionLng,
+				c.gpsAccuracyM ?? "",
+				c.supervisorReview ? "yes" : "no",
+			]
+				.map((v) => `"${String(v).replace(/"/g, '""')}"`)
+				.join(","),
+		);
+		const csv = [headers.join(","), ...rows].join("\n");
+		const blob = new Blob([csv], { type: "text/csv" });
+		const url = URL.createObjectURL(blob);
+		const a = document.createElement("a");
+		a.href = url;
+		a.download = `collections-${new Date().toISOString().slice(0, 10)}.csv`;
+		a.click();
+		URL.revokeObjectURL(url);
+	};
 
 	return (
 		<div className="space-y-6">
@@ -214,18 +325,69 @@ export default function CollectionsPage() {
 					</span>
 				}
 				description="Read-only ledger of every verified collection. Reverse a row to issue a corrected receipt."
+				actions={
+					<Button variant="outline" onClick={exportCsv} disabled={filteredRows.length === 0}>
+						<FileDown className="mr-2 size-4" />
+						Export CSV
+					</Button>
+				}
 			/>
+
+			<div className="grid gap-3 sm:grid-cols-[2fr_1fr_1fr]">
+				<div className="space-y-1">
+					<Label htmlFor="search">Search</Label>
+					<Input
+						id="search"
+						placeholder="Receipt #, customer, agent, code…"
+						value={search}
+						onChange={(e) => setSearch(e.target.value)}
+					/>
+				</div>
+				<div className="space-y-1">
+					<Label htmlFor="mode">Payment mode</Label>
+					<Select value={modeFilter} onValueChange={setModeFilter}>
+						<SelectTrigger id="mode">
+							<SelectValue />
+						</SelectTrigger>
+						<SelectContent>
+							<SelectItem value="all">All modes</SelectItem>
+							<SelectItem value="cash">Cash</SelectItem>
+							<SelectItem value="cheque">Cheque</SelectItem>
+							<SelectItem value="bank_transfer">Bank transfer</SelectItem>
+							<SelectItem value="upi">UPI</SelectItem>
+						</SelectContent>
+					</Select>
+				</div>
+				<div className="space-y-1">
+					<Label htmlFor="review">Status</Label>
+					<Select value={reviewFilter} onValueChange={setReviewFilter}>
+						<SelectTrigger id="review">
+							<SelectValue />
+						</SelectTrigger>
+						<SelectContent>
+							<SelectItem value="all">All</SelectItem>
+							<SelectItem value="review">Flagged for review</SelectItem>
+							<SelectItem value="clean">Clean only</SelectItem>
+						</SelectContent>
+					</Select>
+				</div>
+			</div>
+
+			<div className="text-xs text-muted-foreground">
+				Showing <span className="font-mono">{filteredRows.length}</span> of{" "}
+				<span className="font-mono">{allRows.length}</span> collections
+			</div>
 
 			<DataTable
 				columns={columns}
-				data={rows}
+				data={filteredRows}
 				loading={isLoading}
 				getRowId={(r) => r.id}
 				emptyState={
 					<EmptyState
 						icon={ReceiptText}
-						title="No collections yet"
-						description="Once your agents start logging in the field they'll appear here in real time."
+						title="No collections match"
+						description="Try widening the date range or clearing the filters."
 					/>
 				}
 			/>

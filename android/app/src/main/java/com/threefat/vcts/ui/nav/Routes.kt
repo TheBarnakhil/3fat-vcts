@@ -35,4 +35,13 @@ object Routes {
         fun with(id: String, replayed: Boolean = false) =
             "receipt/$id?replayed=$replayed"
     }
+
+    /** Phase 8 - capture screens are reached from the receipt preview. */
+    object Capture {
+        const val ArgCollectionId = "collectionId"
+        const val PhotoPattern = "capture/photo/{$ArgCollectionId}"
+        const val SignaturePattern = "capture/signature/{$ArgCollectionId}"
+        fun photo(id: String) = "capture/photo/$id"
+        fun signature(id: String) = "capture/signature/$id"
+    }
 }

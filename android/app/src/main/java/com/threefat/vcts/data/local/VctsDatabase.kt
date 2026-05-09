@@ -23,6 +23,11 @@ import com.threefat.vcts.data.local.entity.SyncQueueEntity
  *
  * Phase 7 adds:
  *   4. A `location_logs` table for queued tracker fixes.
+ *
+ * Phase 8 adds:
+ *   5. `collections.photo_url` / `collections.signature_url` columns
+ *      (nullable) so the offline-first capture flow can record an
+ *      attachment locally and the upload drainer replays it later.
  */
 @Database(
     entities = [
@@ -31,7 +36,7 @@ import com.threefat.vcts.data.local.entity.SyncQueueEntity
         SyncQueueEntity::class,
         LocationLogEntity::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = false,
 )
 abstract class VctsDatabase : RoomDatabase() {
@@ -115,6 +120,20 @@ abstract class VctsDatabase : RoomDatabase() {
                     ON location_logs (sync_status, logged_at)
                     """.trimIndent(),
                 )
+            }
+        }
+
+        /**
+         * Phase 8 adds nullable `photo_url` and `signature_url` columns
+         * to the local `collections` table. Both are R2 *keys*, never
+         * absolute URLs - the receipt route re-presigns at render time.
+         */
+        val MIGRATION_3_4: Migration = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE collections ADD COLUMN photo_url TEXT")
+                db.execSQL("ALTER TABLE collections ADD COLUMN signature_url TEXT")
+                db.execSQL("ALTER TABLE collections ADD COLUMN photo_local_path TEXT")
+                db.execSQL("ALTER TABLE collections ADD COLUMN signature_local_path TEXT")
             }
         }
     }
