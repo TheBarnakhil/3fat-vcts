@@ -22,7 +22,23 @@ data class PullSummary(
     val hasMore: Boolean,
 )
 
+/**
+ * Phase 7: tracker-fix drain summary. Lighter than [PushSummary] because
+ * the location-log batch endpoint has no per-record reconciliation - we
+ * only care about how many rows we tried to push and how many the server
+ * ack'd as either created or duplicate.
+ */
+data class LocationPushSummary(
+    val attempted: Int,
+    val acknowledged: Int,
+    val transientFailures: Int,
+    val pruned: Int,
+) {
+    val isClean: Boolean get() = transientFailures == 0
+}
+
 data class SyncSummary(
     val push: PushSummary?,
     val pull: PullSummary?,
+    val locationPush: LocationPushSummary? = null,
 )

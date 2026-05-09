@@ -42,11 +42,12 @@ class TenantDataWiper @Inject constructor(
     private suspend fun clearLocalState() {
         // Order matters: clear room first so any in-flight observer reads
         // an empty cache before we drop the auth tokens that allow it to
-        // re-fetch. The sync queue is part of that wipe - we never want
-        // pending mutations from a previous tenant to flush against a new
-        // tenant's bearer token.
+        // re-fetch. The sync queue and tracker fixes are part of that
+        // wipe - we never want pending mutations or location data from a
+        // previous tenant to flush against a new tenant's bearer token.
         runCatching {
             database.syncQueueDao().clear()
+            database.locationLogDao().clear()
             database.customerDao().clear()
             database.collectionDao().clear()
         }

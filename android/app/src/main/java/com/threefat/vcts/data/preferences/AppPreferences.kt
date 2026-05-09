@@ -3,6 +3,7 @@ package com.threefat.vcts.data.preferences
 import android.content.Context
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -35,6 +36,13 @@ private object Keys {
     // these so a fresh login starts with a full pull.
     val SYNC_PULL_CURSOR = stringPreferencesKey("sync_pull_cursor")
     val SYNC_LAST_SUCCESS_AT = longPreferencesKey("sync_last_success_at")
+
+    // Phase 7: agent's "active duty" toggle (drives the foreground tracker
+    // service) and the last successful fix timestamp shown on the dashboard.
+    // Cleared on logout / tenant change because tracking is a session
+    // contract, not a device-wide setting.
+    val TRACKING_ENABLED = booleanPreferencesKey("tracking_enabled")
+    val TRACKING_LAST_FIX_AT = longPreferencesKey("tracking_last_fix_at")
 }
 
 class AppPreferences(private val context: Context) {
@@ -74,6 +82,20 @@ class AppPreferences(private val context: Context) {
 
     suspend fun setSyncLastSuccessAt(epochMillis: Long) {
         context.appDataStore.edit { it[Keys.SYNC_LAST_SUCCESS_AT] = epochMillis }
+    }
+
+    val trackingEnabled: Flow<Boolean> =
+        context.appDataStore.data.map { it[Keys.TRACKING_ENABLED] ?: false }
+
+    suspend fun setTrackingEnabled(enabled: Boolean) {
+        context.appDataStore.edit { it[Keys.TRACKING_ENABLED] = enabled }
+    }
+
+    val trackingLastFixAt: Flow<Long?> =
+        context.appDataStore.data.map { it[Keys.TRACKING_LAST_FIX_AT] }
+
+    suspend fun setTrackingLastFixAt(epochMillis: Long) {
+        context.appDataStore.edit { it[Keys.TRACKING_LAST_FIX_AT] = epochMillis }
     }
 
     /**

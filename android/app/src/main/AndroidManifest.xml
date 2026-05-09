@@ -11,10 +11,17 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 
-    <!-- Phase 7 will request background location. Declared now so reviewers
-         see the full set; the user prompt only fires when actually requested
-         in Phase 7's foreground service. -->
+    <!-- Phase 7: background location is requested via the in-app rationale
+         screen the first time the agent enables active-duty tracking. -->
     <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+
+    <!-- Phase 7: foreground service for the active-duty location tracker.
+         POST_NOTIFICATIONS is needed on Android 13+ so the persistent
+         notification renders; the system grants it implicitly to apps
+         targeting < 33 but we ask explicitly to be safe. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:name=".VctsApplication"
@@ -55,6 +62,15 @@
                 android:value="androidx.startup"
                 tools:node="remove" />
         </provider>
+
+        <!-- Phase 7: foreground tracker that captures one GPS fix every
+             5 minutes while the agent is on duty. Type "location" is
+             required on Android 14+; we keep `exported="false"` since
+             only the app starts and stops the service. -->
+        <service
+            android:name=".tracking.LocationLoggerService"
+            android:exported="false"
+            android:foregroundServiceType="location" />
 
     </application>
 </manifest>

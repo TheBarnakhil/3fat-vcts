@@ -6,6 +6,7 @@ import com.threefat.vcts.data.local.DatabaseKeyProvider
 import com.threefat.vcts.data.local.VctsDatabase
 import com.threefat.vcts.data.local.dao.CollectionDao
 import com.threefat.vcts.data.local.dao.CustomerDao
+import com.threefat.vcts.data.local.dao.LocationLogDao
 import com.threefat.vcts.data.local.dao.SyncQueueDao
 import dagger.Module
 import dagger.Provides
@@ -49,7 +50,10 @@ object DatabaseModule {
             VctsDatabase.NAME,
         )
             .openHelperFactory(factory)
-            .addMigrations(VctsDatabase.MIGRATION_1_2)
+            .addMigrations(
+                VctsDatabase.MIGRATION_1_2,
+                VctsDatabase.MIGRATION_2_3,
+            )
             // Pre-launch we still allow destructive fallback so a corrupt
             // local DB after a stalled install doesn't brick the agent's
             // workflow - the offline queue is rebuilt from /sync/pull.
@@ -65,4 +69,7 @@ object DatabaseModule {
 
     @Provides
     fun provideSyncQueueDao(db: VctsDatabase): SyncQueueDao = db.syncQueueDao()
+
+    @Provides
+    fun provideLocationLogDao(db: VctsDatabase): LocationLogDao = db.locationLogDao()
 }

@@ -95,6 +95,26 @@
     <string name="queue_open_button">Open offline queue</string>
     <string name="queue_pending_count">%1$d pending</string>
 
+    <!-- Active duty / location tracking (Phase 7) -->
+    <string name="tracking_channel_name">Active duty tracking</string>
+    <string name="tracking_channel_description">Persistent notification shown while the app is recording your route.</string>
+    <string name="tracking_notification_title">VCTS · on duty</string>
+    <string name="tracking_notification_default_text">Recording your route every 5 minutes.</string>
+    <string name="tracking_notification_recent_with_accuracy">Last fix: %1$.4f, %2$.4f · ±%3$dm</string>
+    <string name="tracking_notification_recent_no_accuracy">Last fix: %1$.4f, %2$.4f</string>
+    <string name="tracking_card_title">Active duty</string>
+    <string name="tracking_card_subtitle_off">Turn on to log your route while visiting customers. Your manager can replay this on the web admin.</string>
+    <string name="tracking_card_subtitle_on">Logging one fix every 5 minutes. Last seen %1$s.</string>
+    <string name="tracking_card_subtitle_on_never">Logging one fix every 5 minutes. No fix yet.</string>
+    <string name="tracking_card_action_enable">Turn on</string>
+    <string name="tracking_card_action_disable">Turn off</string>
+    <string name="tracking_card_pending">%1$d fix(es) pending sync</string>
+    <string name="tracking_background_required">Background location needed</string>
+    <string name="tracking_background_subtitle">Allow VCTS to access location all the time so we can keep recording when the screen is off. Without this, your visit log will be incomplete.</string>
+    <string name="tracking_background_request">Allow background location</string>
+    <string name="tracking_background_open_settings">Open settings</string>
+    <string name="tracking_background_skip">Not now</string>
+
     <!-- Common -->
     <string name="common_back">Back</string>
     <string name="common_retry">Retry</string>

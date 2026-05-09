@@ -6,38 +6,39 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.threefat.vcts.data.local.dao.CollectionDao
 import com.threefat.vcts.data.local.dao.CustomerDao
+import com.threefat.vcts.data.local.dao.LocationLogDao
 import com.threefat.vcts.data.local.dao.SyncQueueDao
 import com.threefat.vcts.data.local.entity.CollectionEntity
 import com.threefat.vcts.data.local.entity.CustomerEntity
+import com.threefat.vcts.data.local.entity.LocationLogEntity
 import com.threefat.vcts.data.local.entity.SyncQueueEntity
 
 /**
- * Room database. Phase 6 introduces:
+ * Room database. Phase 6 introduced:
  *   1. A new `sync_queue` table holding pending offline mutations.
  *   2. A `sync_status` column on `collections` so the UI can show the
  *      lifecycle of a row (pending / in_flight / synced / failed).
  *   3. A SupportFactory layer (wired in [DatabaseModule]) that opens the
  *      underlying SQLite via SQLCipher with a Keystore-derived passphrase.
  *
- * Because SQLCipher's first-time encryption happens at file create, the
- * existing plain-text `vcts.db` from Phase 5 is intentionally orphaned -
- * we open a new encrypted file with a fresh name. That's effectively a
- * destructive migration; pre-launch this is acceptable and the Phase 5
- * cache is re-fetched from `/api/sync/pull` on next login anyway.
+ * Phase 7 adds:
+ *   4. A `location_logs` table for queued tracker fixes.
  */
 @Database(
     entities = [
         CustomerEntity::class,
         CollectionEntity::class,
         SyncQueueEntity::class,
+        LocationLogEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = false,
 )
 abstract class VctsDatabase : RoomDatabase() {
     abstract fun customerDao(): CustomerDao
     abstract fun collectionDao(): CollectionDao
     abstract fun syncQueueDao(): SyncQueueDao
+    abstract fun locationLogDao(): LocationLogDao
 
     companion object {
         /**
@@ -82,6 +83,36 @@ abstract class VctsDatabase : RoomDatabase() {
                     """
                     CREATE INDEX IF NOT EXISTS index_sync_queue_status_enqueued_at
                     ON sync_queue (status, enqueued_at)
+                    """.trimIndent(),
+                )
+            }
+        }
+
+        /**
+         * Phase 7 adds the `location_logs` queue. No data on existing
+         * devices needs to migrate over, so the path is just CREATE TABLE.
+         */
+        val MIGRATION_2_3: Migration = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS location_logs (
+                        client_uuid TEXT NOT NULL PRIMARY KEY,
+                        lat REAL NOT NULL,
+                        lng REAL NOT NULL,
+                        accuracy_m REAL,
+                        battery_pct INTEGER,
+                        logged_at TEXT NOT NULL,
+                        source TEXT NOT NULL DEFAULT 'tracker',
+                        sync_status TEXT NOT NULL DEFAULT 'pending',
+                        enqueued_at INTEGER NOT NULL
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    """
+                    CREATE INDEX IF NOT EXISTS index_location_logs_sync_status_logged_at
+                    ON location_logs (sync_status, logged_at)
                     """.trimIndent(),
                 )
             }

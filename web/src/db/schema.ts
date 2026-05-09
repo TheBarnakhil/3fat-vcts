@@ -233,6 +233,12 @@ export const receiptCounters = pgTable(
 
 // ---------------------------------------------------------------------------
 // location_logs - periodic GPS fix from each agent. Append-only, heavy table.
+//
+// Phase 7 adds:
+//   - `client_uuid` so the batch endpoint can dedupe a retried push without
+//     a separate dedup table; (tenant, agent, client_uuid) is unique.
+//   - `source` so we can distinguish auto-collected fixes from manual ones
+//     (e.g. the GPS pin captured at collection time).
 // ---------------------------------------------------------------------------
 
 export const locationLogs = pgTable(
@@ -245,10 +251,16 @@ export const locationLogs = pgTable(
 		agentId: uuid("agent_id")
 			.notNull()
 			.references(() => users.id, { onDelete: "restrict" }),
+		clientUuid: uuid("client_uuid"),
 		lat: doublePrecision("lat").notNull(),
 		lng: doublePrecision("lng").notNull(),
 		accuracyM: doublePrecision("accuracy_m"),
 		batteryPct: integer("battery_pct"),
+		// Where the fix came from on the device. Free-form so additional
+		// sources (e.g. "passive", "fused") don't need a migration. Today:
+		//   "tracker"     - periodic foreground-service fix
+		//   "collection"  - one-shot GPS captured at collection submit time
+		source: text("source").notNull().default("tracker"),
 		loggedAt: timestamp("logged_at", { withTimezone: true }).notNull(),
 		createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 	},
@@ -257,6 +269,69 @@ export const locationLogs = pgTable(
 			t.tenantId,
 			t.agentId,
 			t.loggedAt,
+		),
+		uniqueIndex("location_logs_tenant_agent_client_uuid_uq").on(
+			t.tenantId,
+			t.agentId,
+			t.clientUuid,
+		),
+	],
+);
+
+// ---------------------------------------------------------------------------
+// customer_visits - sustained-presence visit rows derived by the cron worker
+// from `location_logs`. One row per (agent, customer, contiguous fence
+// presence window). dwell_seconds is the inclusive presence duration.
+//
+// We keep visits as a separate, derived table (not a view) so the manager
+// dashboard (Phase 9) can render it cheaply and we can mark a visit as
+// "validated" once a manager has signed off on a collection that happened
+// during that window.
+// ---------------------------------------------------------------------------
+
+export const customerVisits = pgTable(
+	"customer_visits",
+	{
+		id: uuid("id").defaultRandom().primaryKey(),
+		tenantId: uuid("tenant_id")
+			.notNull()
+			.references(() => tenants.id, { onDelete: "restrict" }),
+		customerId: uuid("customer_id")
+			.notNull()
+			.references(() => customers.id, { onDelete: "restrict" }),
+		agentId: uuid("agent_id")
+			.notNull()
+			.references(() => users.id, { onDelete: "restrict" }),
+		startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
+		endedAt: timestamp("ended_at", { withTimezone: true }).notNull(),
+		dwellSeconds: integer("dwell_seconds").notNull(),
+		// "location_logs" - reconstructed from sustained presence (3+ min)
+		// "collection"    - synthesised from a successful collection write
+		source: text("source").notNull().default("location_logs"),
+		// Linked collection if this visit overlaps with a collection write.
+		// Nullable because most agent visits are scouting / payment-attempt
+		// rather than a closed collection.
+		collectionId: uuid("collection_id").references(() => collections.id, {
+			onDelete: "set null",
+		}),
+		createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+	},
+	(t) => [
+		uniqueIndex("customer_visits_tenant_agent_customer_started_uq").on(
+			t.tenantId,
+			t.agentId,
+			t.customerId,
+			t.startedAt,
+		),
+		index("customer_visits_tenant_agent_started_idx").on(
+			t.tenantId,
+			t.agentId,
+			t.startedAt,
+		),
+		index("customer_visits_tenant_customer_started_idx").on(
+			t.tenantId,
+			t.customerId,
+			t.startedAt,
 		),
 	],
 );
@@ -399,4 +474,8 @@ export type Collection = typeof collections.$inferSelect;
 export type NewCollection = typeof collections.$inferInsert;
 export type SupervisorReview = typeof supervisorReviews.$inferSelect;
 export type NewSupervisorReview = typeof supervisorReviews.$inferInsert;
+export type LocationLog = typeof locationLogs.$inferSelect;
+export type NewLocationLog = typeof locationLogs.$inferInsert;
+export type CustomerVisit = typeof customerVisits.$inferSelect;
+export type NewCustomerVisit = typeof customerVisits.$inferInsert;
 export type UserRole = (typeof userRole.enumValues)[number];

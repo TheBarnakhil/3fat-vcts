@@ -22,10 +22,13 @@ overview: Deliver the multi-tenant Verified Collection Tracking System in 11 inc
     status: completed
   - id: phase6
     content: "Phase 6 - Offline sync: Room queue, WorkManager, conflict resolution, SQLCipher, offline queue UI"
-    status: in_progress
+    status: completed
+  - id: phase6_followup
+    content: "Phase 6.1 follow-up - Agent assignment scoping (server + UI) and queue retry policy (cap + discard)"
+    status: completed
   - id: phase7
     content: Phase 7 - Location logging + visit-validation worker + manager movement replay API
-    status: pending
+    status: in_progress
   - id: phase8
     content: Phase 8 - Photo + signature capture, tenant-prefixed R2 upload via presigned URLs, share sheet, online verification page
     status: pending
@@ -312,15 +315,60 @@ Feature work on top of the design system:
 
 ---
 
+## Phase 6.1 - Post-Phase-6 hardening (assignment + queue policy)
+
+Out-of-scope work that landed alongside Phase 6 because it surfaced during dogfooding the offline queue:
+
+**Agent ↔ customer assignment is now load-bearing**
+
+- `GET /api/customers`, `GET /api/customers/:id`, and `GET /api/sync/pull` filter to `assignedAgentId = current agent` for `role === "agent"`. Managers/admins/auditors keep tenant-wide visibility.
+- `createCollectionInTx` now requires `customer.assignedAgentId === agentId` for agents. Previously a null `assignedAgentId` (unassigned customer) was treated as "anyone can collect"; that loophole is closed.
+- Web `Customers` table shows an **Assigned agent** column; the create/edit dialog has an `Assigned agent` selector populated from `/api/agents`.
+- Android customer list + detail render an "Assigned to you" label so the field agent has a constant visual confirmation that the store is theirs.
+
+**Offline queue retry ceiling + discard**
+
+- Workers now stop draining a row after `attempts >= 10` and `failed` rows are terminal (no longer pulled into `nextBatch`). This kills the "40 retries on a forbidden row" failure mode that was burning battery in the field.
+- Offline-queue UI grows a **Discard from queue** action for any row that is `failed` or has hit the attempt ceiling. Discard removes both the queue entry and the optimistic local collection row so the agent's "outstanding pending" count drops to zero again.
+
+---
+
 ## Phase 7 - Location logging + visit validation
 
-**Goal:** Manager can replay an agent's day on the web map.
+**Goal:** Manager can replay an agent's day; tracker fixes corroborate every collection.
 
-- Foreground service with 5-minute location updates while app is active; batched to local Room table
-- `POST /api/location-logs/batch` sync in same WorkManager job as Phase 6
-- Background-location permission UX flow (Android 10+ rationale screen)
-- Server-side visit-validation worker (Node cron via Vercel Cron): correlates `location_logs` with `customers`, marks visits where agent was inside fence >= 3 min
-- Flag collections whose GPS is outside any customer fence -> `supervisor_review` flag
+**Schema additions**
+
+- `location_logs.client_uuid` for idempotent batch pushes; the `(tenant, agent, client_uuid)` unique index turns retries into no-ops.
+- `customer_visits` table: derived rows of sustained-presence (agent inside fence ≥ `VISIT_MIN_DWELL_SECONDS`, default 180s) with `(tenant, agent, customer, started_at)` unique to keep the cron worker idempotent.
+- Three new tunables on `env`: `VISIT_MIN_DWELL_SECONDS`, `VISIT_RECOMPUTE_LOOKBACK_MIN`, `VISIT_COLLECTION_TOLERANCE_MIN`; a new `CRON_SECRET` for Vercel-Cron auth.
+- RLS update extends to `customer_visits`; `vcts_app` gets append-only privileges on `location_logs` (no DELETE / UPDATE - tracker fixes are facts).
+
+**Backend endpoints**
+
+- `POST /api/location-logs/batch` (agent-only). Up to 200 fixes per call, idempotent on `clientUuid`, returns `{ outcomes: [{clientUuid, status: "created" | "duplicate"}], counts }`.
+- `GET /api/agents/:id/movement?day=YYYY-MM-DD[&tz=Asia/Kolkata]` (manager / super-admin / auditor). Returns the day's `location_logs` plus the `customer_visits` derived for that day. Paged out at 5000 fixes; the response includes a `truncated` flag.
+- `GET|POST /api/cron/visits/recompute` - Vercel Cron entry point, every 15 minutes per `vercel.json`. Re-derives visits across all tenants, raises supervisor reviews for unverified collections.
+- Visit clustering algorithm: walk fixes in time order, mark each fix with the **closest** in-fence customer, emit a visit when the run length ≥ `minDwellSeconds`. Gaps > 12 min split runs (one missed tracker tick is tolerated).
+- Cross-correlation: any collection whose `collected_at ± VISIT_COLLECTION_TOLERANCE_MIN` window has no `tracker`-source fix inside the customer's fence raises an `unverified_visit` row in `supervisor_reviews` and flips `collections.supervisor_review = true`.
+
+**Android additions**
+
+- New Room table `location_logs` (Room v3 migration). Single-flight upserts; pruning of synced rows older than 24 h to bound on-device storage.
+- `LocationLoggerService` foreground service using `FusedLocationProviderClient` at 5-min cadence, `Priority.PRIORITY_BALANCED_POWER_ACCURACY`. Persistent notification doubles as a clear "tracking on" affordance for the agent.
+- `LocationLoggerScheduler` is the single seam for enabling / disabling tracking + restoring it after process death (called from `Application.onCreate`).
+- Background-location rationale dialog (Android 10+) launched right after the agent flips the dashboard switch; falls back to "Open settings" once the user has been prompted once.
+- `LocationLogsPushDrainer` rides the existing `SyncWorker`. Drains FIFO in 100-row batches; both `created` and `duplicate` outcomes mark the row synced. Transport failures simply leave rows pending - no per-row error reconciliation needed.
+- Dashboard `TrackingCard` shows toggle, last-fix timestamp (relative time), pending-fix count, and triggers the foreground / background permission flows in one gesture.
+- `TenantDataWiper` clears `location_logs` on logout + tenant change so a swapped device never replays the previous agent's route.
+
+**Manifest / OS plumbing**
+
+- `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_LOCATION`, `POST_NOTIFICATIONS` permissions added.
+- `<service android:foregroundServiceType="location" />` in the manifest so Android 14+ accepts the location-typed foreground promotion.
+- Notification channel `vcts_active_duty` (low importance, no badge, silent) created at `Application.onCreate`.
+
+**Phase 9 will pick up:** the web `Movement` page UI (polyline replay, day picker, visit timeline) and the supervisor-review queue UI; the data is already flowing.
 
 ---
 

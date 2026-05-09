@@ -60,6 +60,15 @@ const EnvSchema = z.object({
 	COLLECTIONS_RATE_PER_MIN: z.coerce.number().int().min(1).max(120).default(10),
 	GPS_MAX_ACCURACY_M: z.coerce.number().min(5).max(500).default(50),
 	RECEIPT_PRESIGN_TTL_SECONDS: z.coerce.number().int().min(60).max(86400).default(900),
+
+	// --- Phase 7: location logging + visit validation
+	// Vercel Cron forwards Authorization: Bearer <CRON_SECRET>. Optional in
+	// dev so the route can be hit from a local terminal without a secret;
+	// prod is checked at runtime when set, see api/cron/visits/recompute.
+	CRON_SECRET: z.preprocess(emptyToUndef, z.string().min(16).optional()),
+	VISIT_MIN_DWELL_SECONDS: z.coerce.number().int().min(30).max(3600).default(180),
+	VISIT_RECOMPUTE_LOOKBACK_MIN: z.coerce.number().int().min(15).max(1440).default(60),
+	VISIT_COLLECTION_TOLERANCE_MIN: z.coerce.number().int().min(1).max(60).default(5),
 });
 
 function load(): z.infer<typeof EnvSchema> {

@@ -5,6 +5,7 @@ import com.threefat.vcts.BuildConfig
 import com.threefat.vcts.data.remote.AuthApi
 import com.threefat.vcts.data.remote.CollectionsApi
 import com.threefat.vcts.data.remote.CustomersApi
+import com.threefat.vcts.data.remote.LocationLogsApi
 import com.threefat.vcts.data.remote.SyncApi
 import com.threefat.vcts.data.remote.interceptor.AuthInterceptor
 import com.threefat.vcts.data.remote.interceptor.TokenRefreshAuthenticator
@@ -115,4 +116,9 @@ object NetworkModule {
     @Singleton
     fun provideSyncApi(retrofit: Retrofit): SyncApi =
         retrofit.create(SyncApi::class.java)
+
+    @Provides
+    @Singleton
+    fun provideLocationLogsApi(retrofit: Retrofit): LocationLogsApi =
+        retrofit.create(LocationLogsApi::class.java)
 }

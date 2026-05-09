@@ -5,8 +5,14 @@ import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 import com.threefat.vcts.sync.SyncScheduler
+import com.threefat.vcts.tracking.LocationLoggerScheduler
+import com.threefat.vcts.tracking.TrackingNotifications
 import dagger.hilt.android.HiltAndroidApp
 import javax.inject.Inject
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 /**
  * Hilt entry point. Annotating the [Application] subclass with
@@ -32,6 +38,10 @@ class VctsApplication : Application(), Configuration.Provider {
 
     @Inject lateinit var syncScheduler: SyncScheduler
 
+    @Inject lateinit var locationLoggerScheduler: LocationLoggerScheduler
+
+    private val applicationScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+
     override val workManagerConfiguration: Configuration
         get() = Configuration.Builder()
             .setWorkerFactory(workerFactory)
@@ -49,9 +59,21 @@ class VctsApplication : Application(), Configuration.Provider {
 
         PDFBoxResourceLoader.init(applicationContext)
 
+        // Phase 7: ensure the active-duty notification channel exists
+        // before the service first calls startForeground - otherwise the
+        // OS will silently downgrade us to a regular notification.
+        TrackingNotifications.ensureChannel(applicationContext)
+
         // Schedule the periodic drain + register the connectivity callback.
         // Cheap to call repeatedly because WorkManager dedupes the periodic
         // request by uniqueWorkName.
         syncScheduler.bootstrap()
+
+        // Phase 7: if the agent had tracking enabled when the process
+        // last died (or the device just rebooted), restart the
+        // foreground service so coverage doesn't have invisible gaps.
+        applicationScope.launch {
+            locationLoggerScheduler.maybeRestart()
+        }
     }
 }

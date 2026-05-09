@@ -45,6 +45,7 @@ const TENANT_TABLES = [
 	"collection_reversals",
 	"receipt_counters",
 	"location_logs",
+	"customer_visits",
 	"audit_trail",
 	"sync_queue",
 	"supervisor_reviews",
@@ -89,13 +90,17 @@ async function grantAppPrivileges(): Promise<void> {
 	for (const t of TENANT_TABLES) {
 		// Append-only ledger tables: vcts_app may write but never DELETE rows.
 		// supervisor_reviews can be UPDATEd (to set resolved_at/resolved_by)
-		// but rows must never disappear.
+		// but rows must never disappear. location_logs are pure facts and
+		// never edited - INSERT only is enough.
 		const grants =
 			t === "collections" ||
 			t === "audit_trail" ||
-			t === "supervisor_reviews"
+			t === "supervisor_reviews" ||
+			t === "customer_visits"
 				? "SELECT, INSERT, UPDATE"
-				: "SELECT, INSERT, UPDATE, DELETE";
+				: t === "location_logs"
+					? "SELECT, INSERT"
+					: "SELECT, INSERT, UPDATE, DELETE";
 		await exec(`GRANT ${grants} ON TABLE "${t}" TO vcts_app`);
 	}
 

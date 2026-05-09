@@ -42,6 +42,7 @@ import com.threefat.vcts.R
 import com.threefat.vcts.domain.model.tenantDisplay
 import com.threefat.vcts.ui.motion.AnimatedCard
 import com.threefat.vcts.ui.theme.MonoFamily
+import com.threefat.vcts.ui.tracking.TrackingCard
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -53,6 +54,9 @@ fun DashboardScreen(
 ) {
     val info by viewModel.info.collectAsStateWithLifecycle()
     val pendingCount by viewModel.pendingCount.collectAsStateWithLifecycle()
+    val trackingEnabled by viewModel.trackingEnabled.collectAsStateWithLifecycle()
+    val trackingLastFixAt by viewModel.trackingLastFixAt.collectAsStateWithLifecycle()
+    val pendingLocationLogs by viewModel.pendingLocationLogCount.collectAsStateWithLifecycle()
 
     Scaffold(
         topBar = {
@@ -139,6 +143,14 @@ fun DashboardScreen(
             }
 
             CustomersEntryCard(onClick = onOpenCustomers)
+
+            TrackingCard(
+                enabled = trackingEnabled,
+                lastFixAt = trackingLastFixAt,
+                pendingCount = pendingLocationLogs,
+                hasBackgroundPermission = viewModel.hasBackgroundLocation(),
+                onToggle = viewModel::setTrackingEnabled,
+            )
 
             if (pendingCount > 0) {
                 QueueEntryCard(pendingCount = pendingCount, onClick = onOpenQueue)
