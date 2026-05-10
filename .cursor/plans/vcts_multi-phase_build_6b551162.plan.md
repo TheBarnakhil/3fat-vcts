@@ -552,15 +552,27 @@ Every other tenant-scoped table identical.
   - `/customers` dialog gained a `LedgerExportActions` row in the footer: two `outline` buttons (CSV + PDF) that hit the new endpoint via `same-origin` fetch, push the response through `Blob` -> `download` (so we can surface server errors as toast instead of dumping JSON in a new tab). Hidden in `create` mode because there's no customer id yet.
   - `verify-isolation` extended with five more checks: cross-tenant 404 in JSON / CSV / PDF formats, agent reading a non-assigned customer's ledger -> 404, and an admin happy-path JSON shape sanity (`customer.id`, `collections[]`, `totals.count`, `totals.net`). Verifier baseline now **65/65**.
 
-### Track D - Build & release prep [pending]
+### Track D - Build & release prep [completed - in-repo items]
 
-- Crashlytics + Analytics SDK wiring (Firebase project already provisioned in earlier phases).
-- TLS cert pin SPKI hashes (currently a placeholder in `app/build.gradle.kts`).
-- ProGuard/R8 rules finalised; verify Compose, Hilt, kotlinx-serialization, OkHttp/Retrofit reflection paths survive shrinking.
-- Photo upload antivirus scan (ClamAV Lambda or Vercel edge check) - to be revisited based on real upload volume.
-- Signed release APK build; add release keystore SHA-1 to `ANDROID_API_KEY` restrictions in GCP.
-- Backup + restore runbook for Neon; integrate with the rotation runbook above.
-- Optional: Play Console internal testing track.
+- **Crashlytics + Analytics wiring:** Android Gradle now applies `com.google.gms.google-services` and `com.google.firebase.crashlytics` only when `android/app/google-services.json` exists. Firebase Analytics + Crashlytics dependencies are gated the same way, keeping debug/clean-checkout builds usable while release machines get telemetry automatically. `BuildConfig.FIREBASE_ENABLED` records whether the Firebase config was present at build time.
+- **TLS cert pinning:** release builds no longer use the dummy `sha256/AAAA...` pin. `API_CERT_PINS` now contains the SPKI hashes observed on 2026-05-10 for `project-jcsyq.vercel.app`: current `*.vercel.app` leaf, Google Trust Services WR1 intermediate, and GTS Root R1 backup. Debug builds remain unpinned for local proxying.
+- **Release signing guard:** `assembleRelease` now depends on `validateReleaseInputs`, which fails fast unless `android/app/google-services.json` and all four env vars are present: `VCTS_RELEASE_STORE_FILE`, `VCTS_RELEASE_STORE_PASSWORD`, `VCTS_RELEASE_KEY_ALIAS`, `VCTS_RELEASE_KEY_PASSWORD`. This prevents accidental unsigned/no-telemetry release artifacts.
+- **ProGuard/R8 hardening:** `android/app/proguard-rules.pro` expanded from minimal Hilt/serialization rules to cover kotlinx-serialization companions, Retrofit annotations, OkHttp/Okio service lookup, Room/WorkManager/Hilt workers, SQLCipher JNI, PDFBox-Android optional desktop APIs, Firebase Crashlytics/Analytics, CameraX, and Coil. This is deliberately conservative for the first shrinked release.
+- **Runbooks:** added `docs/runbooks/android-release.md` (Firebase config, signing env, SHA-1 extraction, TLS pin rotation, build/internal-test checklist) and `docs/runbooks/neon-backup-restore.md` (routine `pg_dump`, Neon PITR/branch restore, full `pg_restore`, mandatory `pnpm db:rls`, verifier baseline, audit-chain check, RLS failure-mode reminder).
+- **Photo upload antivirus:** not implemented in code for Phase 10. Decision: defer until real upload volume justifies the operational complexity; candidate designs remain ClamAV Lambda/S3-style scanner or a Vercel-side MIME/content validation layer before accepting attachment metadata.
+- **External console steps moved to final release phase:** the local `android/app/google-services.json` is already gitignored and should stay uncommitted. Actual signed APK/AAB generation, release keystore handling, release SHA-1 API-key restriction, and Play Console internal testing are deferred to the final release phase.
+
+---
+
+## Final Release Phase - Signed Android + Production Rollout
+
+**Goal:** turn the release-prepped codebase into distributable production artifacts.
+
+- Build the signed Android release APK/AAB from a Gradle-enabled machine with `android/app/google-services.json` present and `VCTS_RELEASE_*` env vars set.
+- Add the release keystore SHA-1 + package `com.threefat.vcts` to the restricted Android Google API key in GCP.
+- Upload to Play Console internal testing, verify install from Play, and confirm Crashlytics/Analytics sessions appear.
+- Run final production smoke tests: `pnpm verify:isolation`, web admin flows, Android login/offline sync/location tracking/photo-signature/receipt share, and customer ledger exports.
+- Take a Neon backup immediately before public rollout using `docs/runbooks/neon-backup-restore.md`.
 
 ---
 

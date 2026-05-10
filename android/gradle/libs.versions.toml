@@ -38,6 +38,7 @@ retrofit = "2.11.0"
 retrofitKotlinSerialization = "1.0.0"
 
 # Firebase / Google Services
+firebaseCrashlyticsPlugin = "3.0.7"
 firebaseBom = "33.7.0"
 googleServices = "4.4.2"
 playServicesLocation = "21.3.0"
@@ -124,6 +125,7 @@ androidx-espresso-core = { module = "androidx.test.espresso:espresso-core", vers
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
+firebase-crashlytics = { id = "com.google.firebase.crashlytics", version.ref = "firebaseCrashlyticsPlugin" }
 google-services = { id = "com.google.gms.google-services", version.ref = "googleServices" }
 hilt = { id = "com.google.dagger.hilt.android", version.ref = "hilt" }
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }

@@ -10,12 +10,24 @@ plugins {
 }
 
 // Apply the google-services plugin only when the JSON config is on disk.
-// This keeps the project buildable on clean checkouts (CI, fresh clone) and
-// fails loudly via [validateGoogleServicesJson] when it's missing on dev.
+// This keeps debug builds working on clean checkouts. Release builds fail
+// loudly through [validateReleaseInputs] until Firebase + signing are present.
 val googleServicesJson = file("google-services.json")
 if (googleServicesJson.exists()) {
     apply(plugin = libs.plugins.google.services.get().pluginId)
+    apply(plugin = libs.plugins.firebase.crashlytics.get().pluginId)
 }
+
+val releaseStoreFile = providers.environmentVariable("VCTS_RELEASE_STORE_FILE").orNull
+val releaseStorePassword = providers.environmentVariable("VCTS_RELEASE_STORE_PASSWORD").orNull
+val releaseKeyAlias = providers.environmentVariable("VCTS_RELEASE_KEY_ALIAS").orNull
+val releaseKeyPassword = providers.environmentVariable("VCTS_RELEASE_KEY_PASSWORD").orNull
+val releaseSigningConfigured = listOf(
+    releaseStoreFile,
+    releaseStorePassword,
+    releaseKeyAlias,
+    releaseKeyPassword,
+).all { !it.isNullOrBlank() }
 
 android {
     namespace = "com.threefat.vcts"
@@ -37,6 +49,18 @@ android {
         // SPKI pin (sha256/...). Empty means "no pinning" - acceptable in dev,
         // never in release. Wired in NetworkModule.
         buildConfigField("String[]", "API_CERT_PINS", "new String[]{}")
+        buildConfigField("boolean", "FIREBASE_ENABLED", googleServicesJson.exists().toString())
+    }
+
+    signingConfigs {
+        create("releaseEnv") {
+            if (!releaseStoreFile.isNullOrBlank()) {
+                storeFile = file(releaseStoreFile)
+            }
+            storePassword = releaseStorePassword
+            keyAlias = releaseKeyAlias
+            keyPassword = releaseKeyPassword
+        }
     }
 
     buildTypes {
@@ -64,6 +88,9 @@ android {
         getByName("release") {
             isMinifyEnabled = true
             isShrinkResources = true
+            if (releaseSigningConfigured) {
+                signingConfig = signingConfigs.getByName("releaseEnv")
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -73,13 +100,18 @@ android {
                 "API_BASE_URL",
                 "\"https://project-jcsyq.vercel.app\""
             )
-            // SPKI pins for project-jcsyq.vercel.app + the Vercel intermediate.
-            // Refresh during Phase 10 hardening; placeholder for now lets
-            // the release build compile but will fail handshake until we pin.
+            // SPKI pins for project-jcsyq.vercel.app as observed on
+            // 2026-05-10. Includes the current *.vercel.app leaf, Google WR1
+            // intermediate, and GTS Root R1 as a backup. Rotate via
+            // docs/runbooks/android-release.md before they age out.
             buildConfigField(
                 "String[]",
                 "API_CERT_PINS",
-                "new String[]{\"sha256/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\"}"
+                "new String[]{" +
+                    "\"sha256/fndKWNHkmWFva8LCkbaQ6j1HS5JLIT9dD8JdQm41s7o=\"," +
+                    "\"sha256/yDu9og255NN5GEf+Bwa9rTrqFQ0EydZ0r1FCh9TdAW4=\"," +
+                    "\"sha256/hxqRlPTu1bMS/0DITB1SSu0vd4u/8l8TjPgfaAp63Gc=\"" +
+                    "}"
             )
         }
     }
@@ -176,6 +208,7 @@ dependencies {
     if (googleServicesJson.exists()) {
         implementation(platform(libs.firebase.bom))
         implementation(libs.firebase.analytics)
+        implementation(libs.firebase.crashlytics)
     }
     implementation(libs.play.services.location)
 
@@ -203,4 +236,36 @@ dependencies {
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
+}
+
+tasks.register("validateReleaseInputs") {
+    group = "verification"
+    description = "Fails release builds until Firebase config, signing env, and TLS pins are present."
+
+    doLast {
+        if (!googleServicesJson.exists()) {
+            throw GradleException(
+                "Missing android/app/google-services.json. Download it from Firebase before building release."
+            )
+        }
+        if (!releaseSigningConfigured) {
+            throw GradleException(
+                "Missing release signing env. Set VCTS_RELEASE_STORE_FILE, " +
+                    "VCTS_RELEASE_STORE_PASSWORD, VCTS_RELEASE_KEY_ALIAS, and " +
+                    "VCTS_RELEASE_KEY_PASSWORD."
+            )
+        }
+        val pins = listOf(
+            "sha256/fndKWNHkmWFva8LCkbaQ6j1HS5JLIT9dD8JdQm41s7o=",
+            "sha256/yDu9og255NN5GEf+Bwa9rTrqFQ0EydZ0r1FCh9TdAW4=",
+            "sha256/hxqRlPTu1bMS/0DITB1SSu0vd4u/8l8TjPgfaAp63Gc=",
+        )
+        check(pins.none { it.contains("AAAAAAAA") }) {
+            "Release certificate pins still contain the placeholder value."
+        }
+    }
+}
+
+tasks.matching { it.name == "preReleaseBuild" }.configureEach {
+    dependsOn("validateReleaseInputs")
 }

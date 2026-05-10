@@ -72,8 +72,14 @@ app/src/main/java/com/threefat/vcts
     └── theme/                   -- VctsTheme: Color, Type, Shape, Motion
 ```
 
+## Release prep
+
+Phase 10 Track D release wiring is documented in `docs/runbooks/android-release.md`.
+
+- **Crashlytics / Analytics:** Gradle applies Google Services + Crashlytics only when `android/app/google-services.json` exists.
+- **Release signing:** `assembleRelease` reads `VCTS_RELEASE_*` environment variables and fails fast if they are missing.
+- **TLS pinning:** release builds pin `project-jcsyq.vercel.app`; debug builds stay unpinned for local proxying.
+
 ## What's deferred
 
-- **Crashlytics / Analytics wiring** lands in Phase 10 once we ship a release keystore and start collecting real device data.
-- **Cert pinning** uses a placeholder pin in release builds. Refresh during Phase 10 with the actual SPKI of `project-jcsyq.vercel.app`.
-- **Inter / JetBrains Mono** fonts will be bundled in a Phase 8 polish pass; for now we use the system sans-serif and monospace stacks.
+- **Inter / JetBrains Mono** fonts will be bundled in a later polish pass; for now we use the system sans-serif and monospace stacks.
