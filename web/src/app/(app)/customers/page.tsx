@@ -3,7 +3,16 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
-import { LoaderCircle, MapPin, Plus, Trash2, Users } from "lucide-react";
+import {
+  Download,
+  FileSpreadsheet,
+  FileText,
+  LoaderCircle,
+  MapPin,
+  Plus,
+  Trash2,
+  Users,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import { PageHeader } from "@/components/shell/page-header";
@@ -529,31 +538,130 @@ function CustomerDialog({
           </div>
         </fieldset>
 
-        <DialogFooter className="md:col-span-2">
-          {readOnly ? (
-            <Button type="button" onClick={onClose}>
-              Close
-            </Button>
+        <DialogFooter className="md:col-span-2 sm:flex-row sm:items-center sm:justify-between">
+          {mode !== "create" && initial ? (
+            <LedgerExportActions customerId={initial.id} customerName={initial.name} />
           ) : (
-            <>
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={onClose}
-                disabled={mutation.isPending}
-              >
-                Cancel
-              </Button>
-              <Button type="submit" disabled={mutation.isPending}>
-                {mutation.isPending && (
-                  <LoaderCircle className="size-4 animate-spin" />
-                )}
-                {mode === "create" ? "Create customer" : "Save changes"}
-              </Button>
-            </>
+            <span />
           )}
+          <div className="flex items-center gap-2">
+            {readOnly ? (
+              <Button type="button" onClick={onClose}>
+                Close
+              </Button>
+            ) : (
+              <>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={onClose}
+                  disabled={mutation.isPending}
+                >
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={mutation.isPending}>
+                  {mutation.isPending && (
+                    <LoaderCircle className="size-4 animate-spin" />
+                  )}
+                  {mode === "create" ? "Create customer" : "Save changes"}
+                </Button>
+              </>
+            )}
+          </div>
         </DialogFooter>
       </form>
     </DialogContent>
+  );
+}
+
+/**
+ * Phase 10 / Track C3 - inline ledger exports.
+ *
+ * Both buttons hit `GET /api/customers/{id}/ledger?format=...` over
+ * `same-origin` fetch (the JWT cookie is httpOnly, so a plain anchor
+ * link would still work, but a fetch + blob round-trip lets us
+ * surface API errors as a toast instead of dumping JSON in a new tab).
+ */
+function LedgerExportActions({
+  customerId,
+  customerName,
+}: {
+  customerId: string;
+  customerName: string;
+}) {
+  const [busy, setBusy] = React.useState<null | "csv" | "pdf">(null);
+
+  async function download(format: "csv" | "pdf") {
+    setBusy(format);
+    try {
+      const res = await fetch(
+        `/api/customers/${customerId}/ledger?format=${format}`,
+        { credentials: "same-origin" },
+      );
+      if (!res.ok) {
+        const text = await res.text();
+        let msg = "Export failed";
+        try {
+          const parsed = JSON.parse(text);
+          msg = parsed?.error?.message ?? parsed?.error ?? msg;
+        } catch {
+          msg = text || msg;
+        }
+        throw new Error(msg);
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const safeName =
+        customerName.replace(/[^a-zA-Z0-9-_]+/g, "-").slice(0, 40) || "customer";
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${safeName}-ledger.${format}`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast.success(`Ledger ${format.toUpperCase()} downloaded`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Export failed");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+      <span className="hidden sm:inline-flex items-center gap-1.5">
+        <Download className="size-3.5" />
+        Ledger
+      </span>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        disabled={!!busy}
+        onClick={() => download("csv")}
+      >
+        {busy === "csv" ? (
+          <LoaderCircle className="size-3.5 animate-spin" />
+        ) : (
+          <FileSpreadsheet className="size-3.5" />
+        )}
+        CSV
+      </Button>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        disabled={!!busy}
+        onClick={() => download("pdf")}
+      >
+        {busy === "pdf" ? (
+          <LoaderCircle className="size-3.5 animate-spin" />
+        ) : (
+          <FileText className="size-3.5" />
+        )}
+        PDF
+      </Button>
+    </div>
   );
 }

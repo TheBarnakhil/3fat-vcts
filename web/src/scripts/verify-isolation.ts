@@ -368,6 +368,40 @@ async function main() {
 		);
 	}
 
+	if (sampleAcmeCustomerId) {
+		// Phase 10 / Track C3 - per-customer ledger.
+		expectStatus(
+			"GET /api/customers/{acme}/ledger as globex admin",
+			(
+				await authedFetch(
+					globexAdmin.accessToken,
+					`/api/customers/${sampleAcmeCustomerId}/ledger`,
+				)
+			).status,
+			404,
+		);
+		expectStatus(
+			"GET /api/customers/{acme}/ledger?format=csv as globex admin",
+			(
+				await authedFetch(
+					globexAdmin.accessToken,
+					`/api/customers/${sampleAcmeCustomerId}/ledger?format=csv`,
+				)
+			).status,
+			404,
+		);
+		expectStatus(
+			"GET /api/customers/{acme}/ledger?format=pdf as globex admin",
+			(
+				await authedFetch(
+					globexAdmin.accessToken,
+					`/api/customers/${sampleAcmeCustomerId}/ledger?format=pdf`,
+				)
+			).status,
+			404,
+		);
+	}
+
 	if (sampleAcmeAgentId) {
 		expectStatus(
 			"GET /api/agents/{acme} as globex admin",
@@ -484,11 +518,64 @@ async function main() {
 			).status,
 			404,
 		);
+		// Phase 10 / Track C3 - the ledger endpoint must respect the same
+		// agent->customer assignment guard as /api/customers/{id}.
+		expectStatus(
+			"GET /api/customers/{otherAgentAssigned}/ledger as acme agent1",
+			(
+				await authedFetch(
+					acmeAgent1.accessToken,
+					`/api/customers/${otherAgentCustomer.id}/ledger`,
+				)
+			).status,
+			404,
+		);
 	} else {
 		skip(
 			"agent cross-customer check",
 			"no acme customer assigned to a different agent",
 		);
+	}
+
+	// Happy-path sanity: an acme admin pulls a ledger for one of their own
+	// customers and gets a structured JSON body. Catches accidental schema
+	// regressions where the endpoint returns 200 but is missing collections
+	// or totals.
+	if (sampleAcmeCustomerId) {
+		const res = await authedFetch(
+			acmeAdmin.accessToken,
+			`/api/customers/${sampleAcmeCustomerId}/ledger`,
+		);
+		if (res.status !== 200) {
+			fail(
+				"GET /api/customers/{self}/ledger as acme admin",
+				`expected 200, got ${res.status}`,
+			);
+		} else {
+			const body = (await res.json().catch(() => null)) as
+				| {
+						customer?: { id?: string };
+						collections?: unknown[];
+						totals?: { count?: number; net?: number };
+				  }
+				| null;
+			const validShape =
+				!!body &&
+				body.customer?.id === sampleAcmeCustomerId &&
+				Array.isArray(body.collections) &&
+				typeof body.totals?.count === "number" &&
+				typeof body.totals?.net === "number";
+			if (validShape) {
+				ok(
+					`GET /api/customers/{self}/ledger as acme admin (count=${body!.totals!.count}, net=${body!.totals!.net})`,
+				);
+			} else {
+				fail(
+					"GET /api/customers/{self}/ledger as acme admin",
+					"missing customer/collections/totals fields",
+				);
+			}
+		}
 	}
 
 	console.log("\nSection E. Role escalation (acme agent hitting manager+ endpoints)");
