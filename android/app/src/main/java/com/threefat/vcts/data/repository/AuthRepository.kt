@@ -1,5 +1,6 @@
 package com.threefat.vcts.data.repository
 
+import com.threefat.vcts.data.preferences.AppPreferences
 import com.threefat.vcts.data.remote.AuthApi
 import com.threefat.vcts.data.remote.dto.ApiErrorBody
 import com.threefat.vcts.data.remote.dto.LoginRequest
@@ -28,10 +29,18 @@ class AuthRepository @Inject constructor(
     private val sessionStore: SessionStore,
     private val json: Json,
     private val tenantWiper: TenantDataWiper,
+    private val appPreferences: AppPreferences,
 ) {
 
     suspend fun login(email: String, password: String): LoginOutcome = try {
-        val response = authApi.login(LoginRequest(email = email.trim(), password = password))
+        val installId = appPreferences.getOrCreateInstallId()
+        val response = authApi.login(
+            LoginRequest(
+                email = email.trim(),
+                password = password,
+                installId = installId,
+            ),
+        )
         val session = Session(
             accessToken = response.accessToken,
             refreshToken = response.refreshToken,

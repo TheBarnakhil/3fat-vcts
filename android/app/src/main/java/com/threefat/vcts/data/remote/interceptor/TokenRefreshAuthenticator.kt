@@ -1,5 +1,6 @@
 package com.threefat.vcts.data.remote.interceptor
 
+import com.threefat.vcts.data.preferences.AppPreferences
 import com.threefat.vcts.data.remote.AuthApi
 import com.threefat.vcts.data.remote.dto.RefreshRequest
 import com.threefat.vcts.data.session.SessionStore
@@ -29,6 +30,7 @@ import javax.inject.Singleton
 class TokenRefreshAuthenticator @Inject constructor(
     private val sessionStore: SessionStore,
     private val authApi: Lazy<AuthApi>,
+    private val appPreferences: AppPreferences,
 ) : Authenticator {
 
     override fun authenticate(route: Route?, response: Response): Request? {
@@ -52,10 +54,21 @@ class TokenRefreshAuthenticator @Inject constructor(
                     .build()
             } else {
                 val rotated = runCatching {
-                    runBlocking { authApi.get().refresh(RefreshRequest(refreshToken)) }
+                    runBlocking {
+                        val installId = appPreferences.getOrCreateInstallId()
+                        authApi.get().refresh(
+                            RefreshRequest(
+                                refreshToken = refreshToken,
+                                installId = installId,
+                            ),
+                        )
+                    }
                 }.getOrNull()
 
                 if (rotated == null) {
+                    // Either the refresh token is expired/revoked, or the
+                    // server rejected with `device_mismatch`. Either way the
+                    // session is unrecoverable - wipe and force re-login.
                     runBlocking { sessionStore.clear() }
                     null
                 } else {

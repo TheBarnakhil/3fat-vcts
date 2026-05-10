@@ -500,12 +500,14 @@ Tracked in tracks rather than a single sweep. Track A first because everything e
   - Drizzle handles parameterised queries everywhere - manual audit confirmed (no string-concat SQL in the codebase).
 - **Key rotation runbook** at `docs/runbooks/key-rotation.md`: per-secret instructions for `JWT_*`, `PASSWORD_PEPPER`, `AUDIT_HMAC_SECRET`, `APP_DB_PASSWORD`, `CRON_SECRET`, R2 keys, plus a force-logout SQL recipe and a post-rotation verification checklist.
 
-### Track B - Device binding [pending]
+### Track B - Device binding [completed]
 
-- JWT carries `dfp` claim = `hash(ANDROID_ID || install UUID)` plus a stable Android `Install ID` from DataStore.
-- Refresh tokens are bound to fingerprint; reuse from another device returns 401 with code `device_mismatch`.
-- Android `TenantDataWiper` clears the install UUID on logout; new install UUIDs are generated lazily on first login.
-- Existing tokens migrate gracefully via "no fingerprint = legacy session" rule that auto-upgrades on next refresh.
+**Threat model:** an attacker who exfiltrates the encrypted refresh token from a stolen device must not be able to replay it from a different device. We bind each refresh-token row to a stable per-install UUID and reject mismatched refreshes.
+
+- **Server:** `refresh_tokens.device_fingerprint TEXT NULL` (added; legacy rows stay null and skip the check during rollout). New helper `web/src/lib/auth/device-fingerprint.ts` exposes `InstallIdSchema` (8-128 chars, regex-tight) and `deviceFingerprint(installId)` = `sha256(installId)` hex. `POST /api/auth/login` accepts an optional `installId`, hashes it, persists the digest on the new refresh row, and embeds the same digest in the access token's `dfp` claim. `POST /api/auth/refresh` accepts `installId`; if the row carries a fingerprint, the request must include a matching `installId` or the row is best-effort revoked and the response is `401 { code: "device_mismatch" }`. Refreshing a legacy row without an `installId` keeps working until it rotates, at which point the new row inherits whatever fingerprint the client now supplies (auto-upgrade path). Schema change is a pure `ADD COLUMN` with no default - rolling out requires `pnpm db:push` against Neon, no data backfill.
+- **JWT:** `AuthClaims.dfp?: string` (optional) so legacy access tokens stay shape-compatible. The claim is informational today; later phases can enforce it at the verifier if we want hard binding on every request.
+- **Android:** `AppPreferences.getOrCreateInstallId()` lazily mints a UUID v4 on first read and persists it across logouts. `LoginRequest` and `RefreshRequest` DTOs gained an optional `installId` field; `AuthRepository.login()` and `TokenRefreshAuthenticator` both pull it from DataStore on every call. `clearSessionTraces()` keeps the install UUID intact (it identifies the *device*, not the user); only uninstall / Clear Data resets it.
+- **Verifier:** `verify-isolation.ts` Section H exercises the matrix - login(installId A) + refresh(installId A) = 200, login(installId A) + refresh(installId B) = 401, login() + refresh() = 200 (legacy compat). Pre-deploy baseline against prod: 51/52 passing (the one failure is the bound-mismatch case, which is exactly what we want to start enforcing).
 
 ### Track C - Carry-over feature gaps [pending]
 

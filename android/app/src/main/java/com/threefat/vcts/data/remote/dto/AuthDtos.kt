@@ -13,11 +13,25 @@ data class LoginRequest(
     val email: String,
     val password: String,
     val deviceId: String? = null,
+    /**
+     * Phase 10 (Track B). Stable per-install UUID generated on first
+     * launch and persisted across logouts. The server hashes this and
+     * stores the digest on the issued refresh-token row; the same hash
+     * goes into the access token's `dfp` claim.
+     */
+    val installId: String? = null,
 )
 
 @Serializable
 data class RefreshRequest(
     val refreshToken: String,
+    /**
+     * Phase 10 (Track B). Must match the installId used at login or the
+     * server will reject the refresh with `device_mismatch` (HTTP 401).
+     * Optional only so refresh rows minted before Track B keep working
+     * during the rollout window.
+     */
+    val installId: String? = null,
 )
 
 @Serializable

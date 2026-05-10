@@ -35,6 +35,7 @@ const GLOBEX_AGENT = { email: "agent1@globex.test", password: "Passw0rd!" };
 
 type Login = {
 	accessToken: string;
+	refreshToken: string;
 	user: { id: string; tenantId: string; tenantSlug: string; role: string };
 };
 
@@ -71,7 +72,11 @@ function expectStatus(
 	else fail(name, `expected ${allowed.join("/")}, got ${got}`);
 }
 
-async function login(creds: { email: string; password: string }): Promise<Login> {
+async function login(creds: {
+	email: string;
+	password: string;
+	installId?: string;
+}): Promise<Login> {
 	const r = await fetch(`${BASE}/api/auth/login`, {
 		method: "POST",
 		headers: { "content-type": "application/json" },
@@ -83,6 +88,17 @@ async function login(creds: { email: string; password: string }): Promise<Login>
 		);
 	}
 	return (await r.json()) as Login;
+}
+
+async function refresh(
+	refreshToken: string,
+	installId?: string,
+): Promise<Response> {
+	return fetch(`${BASE}/api/auth/refresh`, {
+		method: "POST",
+		headers: { "content-type": "application/json" },
+		body: JSON.stringify({ refreshToken, installId }),
+	});
 }
 
 function authedFetch(
@@ -595,6 +611,64 @@ async function main() {
 		).status,
 		[401, 403],
 	);
+
+	console.log("\nSection H. Device binding (Phase 10 / Track B)");
+	// Each login creates a fresh refresh-token row in the DB; we burn three
+	// rows here to test the matrix [bound + matching, bound + mismatch,
+	// legacy unbound]. agent2@acme is used because it isn't load-bearing
+	// in the rest of the suite and we want to keep agent1's rate-limit
+	// headroom for the role-escalation tests above.
+	const installA = "isolation-test-install-a-0000000000";
+	const installB = "isolation-test-install-b-0000000000";
+
+	let boundMatch: Login | null = null;
+	let boundMismatch: Login | null = null;
+	let legacy: Login | null = null;
+	try {
+		boundMatch = await login({ ...ACME_AGENT_2, installId: installA });
+		ok("login(installId A) succeeds");
+	} catch (err) {
+		fail("login(installId A)", (err as Error).message);
+	}
+	try {
+		boundMismatch = await login({ ...ACME_AGENT_2, installId: installA });
+		ok("login(installId A) again succeeds (separate refresh row)");
+	} catch (err) {
+		fail("login(installId A) #2", (err as Error).message);
+	}
+	try {
+		legacy = await login({ ...ACME_AGENT_2 });
+		ok("login(no installId) still works (legacy path)");
+	} catch (err) {
+		fail("login(no installId)", (err as Error).message);
+	}
+
+	if (boundMismatch) {
+		// Same agent, different installId in the refresh body -> server
+		// rejects with 401 (device_mismatch) and revokes the row.
+		expectStatus(
+			"refresh(bound) with WRONG installId",
+			(await refresh(boundMismatch.refreshToken, installB)).status,
+			401,
+		);
+	}
+	if (boundMatch) {
+		// Bound row + matching installId rotates correctly (200).
+		expectStatus(
+			"refresh(bound) with matching installId",
+			(await refresh(boundMatch.refreshToken, installA)).status,
+			200,
+		);
+	}
+	if (legacy) {
+		// Legacy row (no stored fingerprint) keeps working without an
+		// installId so the rollout doesn't lock anyone out mid-flight.
+		expectStatus(
+			"refresh(legacy) without installId",
+			(await refresh(legacy.refreshToken)).status,
+			200,
+		);
+	}
 
 	console.log(
 		`\n${passed} passed, ${failed} failed, ${skipped} skipped (${BASE})`,

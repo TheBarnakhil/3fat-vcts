@@ -18,6 +18,13 @@ export type AuthClaims = {
 	tslug: string;
 	/** user display name */
 	name: string;
+	/**
+	 * Device fingerprint (sha256 hex of the device's install UUID). Phase
+	 * 10 / Track B. Optional so legacy clients without an installId keep
+	 * working during the rollout window; new clients always include it
+	 * and the refresh flow enforces it against the stored value.
+	 */
+	dfp?: string;
 };
 
 let privateKeyPromise: Promise<CryptoKey> | null = null;

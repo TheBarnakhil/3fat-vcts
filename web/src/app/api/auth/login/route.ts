@@ -5,6 +5,10 @@ import { refreshTokens, tenants, users } from "@/db/schema";
 import { withoutTenant } from "@/db/tenant";
 import { appendAudit } from "@/lib/audit/chain";
 import {
+	deviceFingerprintOrNull,
+	InstallIdSchema,
+} from "@/lib/auth/device-fingerprint";
+import {
 	generateRefreshToken,
 	signAccessToken,
 	type AuthClaims,
@@ -31,6 +35,10 @@ const Body = z.object({
 	// posting megabytes of bytes for bcrypt to chew through.
 	password: z.string().min(1).max(256),
 	deviceId: z.string().max(128).optional(),
+	// Phase 10 (Track B): stable per-install UUID generated on the device.
+	// Optional so the rollout doesn't lock out legacy clients; once a
+	// release with `installId` lands we can flip a strict-mode flag.
+	installId: InstallIdSchema.optional(),
 });
 
 function parseExpiresIn(spec: string): number {
@@ -55,7 +63,8 @@ export async function POST(req: NextRequest) {
 	try {
 		const parsed = Body.safeParse(await req.json().catch(() => ({})));
 		if (!parsed.success) throw badRequest("Invalid body", parsed.error.flatten());
-		const { email, password, deviceId } = parsed.data;
+		const { email, password, deviceId, installId } = parsed.data;
+		const fingerprint = deviceFingerprintOrNull(installId);
 
 		const ip =
 			req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
@@ -119,6 +128,7 @@ export async function POST(req: NextRequest) {
 			role: found.role,
 			tslug: found.tenantSlug,
 			name: found.name,
+			...(fingerprint ? { dfp: fingerprint } : {}),
 		};
 		const accessToken = await signAccessToken(claims);
 
@@ -141,6 +151,7 @@ export async function POST(req: NextRequest) {
 				userId: found.id,
 				tokenHash,
 				deviceId: deviceId ?? null,
+				deviceFingerprint: fingerprint,
 				expiresAt,
 			});
 			await tx.update(users).set({ lastLoginAt: new Date() }).where(eq(users.id, found.id));

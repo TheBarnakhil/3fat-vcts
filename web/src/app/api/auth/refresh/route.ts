@@ -4,18 +4,32 @@ import { z } from "zod";
 import { refreshTokens, tenants, users } from "@/db/schema";
 import { withoutTenant } from "@/db/tenant";
 import {
+	deviceFingerprint,
+	deviceFingerprintOrNull,
+	InstallIdSchema,
+} from "@/lib/auth/device-fingerprint";
+import {
 	generateRefreshToken,
 	hashRefreshToken,
 	signAccessToken,
 	type AuthClaims,
 } from "@/lib/auth/jwt";
 import { env } from "@/lib/env";
-import { badRequest, toResponse, unauthorized } from "@/lib/errors";
+import {
+	badRequest,
+	HttpError,
+	toResponse,
+	unauthorized,
+} from "@/lib/errors";
 
 export const runtime = "nodejs";
 
 const Body = z.object({
-	refreshToken: z.string().min(1),
+	refreshToken: z.string().min(1).max(256),
+	// Phase 10 (Track B): when present we cross-check against the stored
+	// device_fingerprint. Optional so legacy refresh rows (created before
+	// Track B shipped) keep working until they expire / rotate.
+	installId: InstallIdSchema.optional(),
 });
 
 function parseExpiresIn(spec: string): number {
@@ -31,6 +45,7 @@ export async function POST(req: NextRequest) {
 		const parsed = Body.safeParse(await req.json().catch(() => ({})));
 		if (!parsed.success) throw badRequest("Invalid body", parsed.error.flatten());
 		const tokenHash = hashRefreshToken(parsed.data.refreshToken);
+		const presentedFingerprint = deviceFingerprintOrNull(parsed.data.installId);
 
 		// Resolve the refresh token (bypass RLS: we don't know the tenant yet)
 		const found = await withoutTenant(async (tx) => {
@@ -40,6 +55,7 @@ export async function POST(req: NextRequest) {
 					tenantId: refreshTokens.tenantId,
 					userId: refreshTokens.userId,
 					deviceId: refreshTokens.deviceId,
+					deviceFingerprint: refreshTokens.deviceFingerprint,
 					email: users.email,
 					name: users.name,
 					role: users.role,
@@ -65,12 +81,49 @@ export async function POST(req: NextRequest) {
 			throw unauthorized("Invalid or expired refresh token");
 		}
 
+		// --- Device-binding check ---------------------------------------
+		// If the refresh row carries a fingerprint (was created post-Track-B
+		// with an installId), the caller MUST present the matching installId.
+		// Mismatch = token replay from a different device -> revoke and 401
+		// with a distinct error code so the client wipes its session.
+		if (found.deviceFingerprint) {
+			if (
+				!presentedFingerprint ||
+				presentedFingerprint !== found.deviceFingerprint
+			) {
+				// Best-effort revoke: an attacker replaying our token shouldn't
+				// get more than one shot. We swallow errors here because the
+				// 401 has to land regardless.
+				await withoutTenant(async (tx) => {
+					await tx
+						.update(refreshTokens)
+						.set({ revokedAt: new Date() })
+						.where(eq(refreshTokens.id, found.id));
+				}).catch(() => undefined);
+				throw new HttpError(
+					401,
+					"device_mismatch",
+					"This refresh token was issued to a different device.",
+				);
+			}
+		}
+
 		// Rotate: revoke old, issue new. If an attacker is replaying a token we
 		// issued to the real user, the real user will get an unauthorized on
 		// their next refresh, which is the normal way to detect theft.
 		const { token: nextRefresh, tokenHash: nextHash } = generateRefreshToken();
 		const refreshSeconds = parseExpiresIn(env.JWT_REFRESH_EXPIRES_IN);
 		const expiresAt = new Date(Date.now() + refreshSeconds * 1000);
+
+		// New row inherits the prior fingerprint when available, or upgrades
+		// a legacy null row to the freshly-presented fingerprint - that way
+		// every refresh after the rollout window is bound, regardless of
+		// which install came in first.
+		const nextFingerprint =
+			found.deviceFingerprint ??
+			(presentedFingerprint
+				? deviceFingerprint(parsed.data.installId!)
+				: null);
 
 		// refresh_tokens is an auth-only table (app role has no privs) so stay
 		// on the admin connection for the rotate.
@@ -84,6 +137,7 @@ export async function POST(req: NextRequest) {
 				userId: found.userId,
 				tokenHash: nextHash,
 				deviceId: found.deviceId,
+				deviceFingerprint: nextFingerprint,
 				expiresAt,
 			});
 		});
@@ -94,6 +148,7 @@ export async function POST(req: NextRequest) {
 			role: found.role,
 			tslug: found.tenantSlug,
 			name: found.name,
+			...(nextFingerprint ? { dfp: nextFingerprint } : {}),
 		};
 		const accessToken = await signAccessToken(claims);
 

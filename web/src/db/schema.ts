@@ -450,6 +450,11 @@ export const refreshTokens = pgTable(
 			.references(() => users.id, { onDelete: "cascade" }),
 		tokenHash: text("token_hash").notNull(),
 		deviceId: text("device_id"),
+		// Phase 10 (Track B): SHA-256 hex of the device's stable install UUID.
+		// Set when the client passes `installId` at login; used at refresh time
+		// to reject token replay from a different device. Nullable so refresh
+		// rows created before Track B keep working until they expire / rotate.
+		deviceFingerprint: text("device_fingerprint"),
 		expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
 		revokedAt: timestamp("revoked_at", { withTimezone: true }),
 		createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

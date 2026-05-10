@@ -9,7 +9,9 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.threefat.vcts.domain.model.ThemeMode
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import java.util.UUID
 
 /**
  * Plain-text user preferences (theme + last-known tenant). Sensitive values
@@ -43,6 +45,13 @@ private object Keys {
     // contract, not a device-wide setting.
     val TRACKING_ENABLED = booleanPreferencesKey("tracking_enabled")
     val TRACKING_LAST_FIX_AT = longPreferencesKey("tracking_last_fix_at")
+
+    // Phase 10 (Track B): device-binding install UUID. Generated once on
+    // first read, persisted across logouts (it identifies the *device*, not
+    // the user), survives app upgrades, dies on uninstall / Clear Data.
+    // Sent as `installId` on login + refresh so the server can bind the
+    // refresh token to this device.
+    val INSTALL_ID = stringPreferencesKey("install_id")
 }
 
 class AppPreferences(private val context: Context) {
@@ -99,14 +108,36 @@ class AppPreferences(private val context: Context) {
     }
 
     /**
-     * Wipes everything except the theme preference (which is a UI choice, not
-     * a session concern). Called on logout.
+     * Returns the persistent install UUID, generating + persisting one on
+     * first call. Identifies *this app on this device*; survives logout
+     * but dies on uninstall / Clear Data so a fresh install transparently
+     * looks like a new device to the server.
+     *
+     * The two-step "read, generate-if-null, write" sequence is racy in
+     * theory but harmless in practice - if two coroutines collide we just
+     * end up with one of the two UUIDs winning, and both reads after the
+     * write see the same value.
+     */
+    suspend fun getOrCreateInstallId(): String {
+        val existing = context.appDataStore.data.first()[Keys.INSTALL_ID]
+        if (!existing.isNullOrBlank()) return existing
+        val fresh = UUID.randomUUID().toString()
+        context.appDataStore.edit { it[Keys.INSTALL_ID] = fresh }
+        return fresh
+    }
+
+    /**
+     * Wipes everything except the theme preference (UI choice, not a session
+     * concern) and the install UUID (device identifier, not a session
+     * credential). Called on logout.
      */
     suspend fun clearSessionTraces() {
         context.appDataStore.edit { prefs ->
             val theme = prefs[Keys.THEME_MODE]
+            val installId = prefs[Keys.INSTALL_ID]
             prefs.clear()
             if (theme != null) prefs[Keys.THEME_MODE] = theme
+            if (installId != null) prefs[Keys.INSTALL_ID] = installId
         }
     }
 }
