@@ -57,7 +57,7 @@ const NAV: readonly NavItem[] = [
   { href: "/reviews", label: "Reviews", icon: AlertOctagon },
   { href: "/audit", label: "Audit", icon: ShieldCheck },
   { href: "/branding", label: "Branding", icon: Palette },
-  { href: "/map", label: "Live map", icon: MapPin, comingSoon: true },
+  { href: "/map", label: "Live map", icon: MapPin },
 ];
 
 export function AppShell({ children }: { children: React.ReactNode }) {

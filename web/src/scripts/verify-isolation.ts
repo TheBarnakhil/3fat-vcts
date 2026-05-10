@@ -656,6 +656,21 @@ async function main() {
 		401,
 	);
 	expectStatus(
+		"GET /api/stream/agent-locations (no token)",
+		(await fetch(`${BASE}/api/stream/agent-locations`)).status,
+		401,
+	);
+	expectStatus(
+		"GET /api/stream/agent-locations as agent",
+		(
+			await authedFetch(
+				acmeAgent1.accessToken,
+				"/api/stream/agent-locations",
+			)
+		).status,
+		403,
+	);
+	expectStatus(
 		"POST /api/auth/login (wrong password)",
 		(
 			await fetch(`${BASE}/api/auth/login`, {
