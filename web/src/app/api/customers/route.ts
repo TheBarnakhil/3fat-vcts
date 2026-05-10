@@ -2,11 +2,12 @@ import { and, eq } from "drizzle-orm";
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 
-import { customers } from "@/db/schema";
-import { withTenant } from "@/db/tenant";
+import { customers, tenants } from "@/db/schema";
+import { withoutTenant, withTenant } from "@/db/tenant";
 import { appendAudit } from "@/lib/audit/chain";
 import { requireAuth, requireRole } from "@/lib/auth/context";
 import { badRequest, toResponse } from "@/lib/errors";
+import { readGeofenceSettings } from "@/lib/tenants/settings";
 
 export const runtime = "nodejs";
 
@@ -19,7 +20,7 @@ const CreateBody = z.object({
   category: z.string().max(64).optional().nullable(),
   lat: z.number().gte(-90).lte(90),
   lng: z.number().gte(-180).lte(180),
-  geofenceRadiusM: z.number().int().min(50).max(500).default(100),
+  geofenceRadiusM: z.number().int().min(50).max(500).optional(),
   outstandingBalance: z.number().finite().default(0),
   creditLimit: z.number().finite().optional().nullable(),
   assignedAgentId: z.string().uuid().optional().nullable(),
@@ -71,6 +72,14 @@ export async function POST(req: NextRequest) {
     const parsed = CreateBody.safeParse(await req.json().catch(() => ({})));
     if (!parsed.success) throw badRequest("Invalid body", parsed.error.flatten());
     const data = parsed.data;
+    const geofenceSettings = await withoutTenant(async (tx) => {
+      const [tenant] = await tx
+        .select({ settings: tenants.settings })
+        .from(tenants)
+        .where(eq(tenants.id, auth.tid))
+        .limit(1);
+      return readGeofenceSettings(tenant?.settings);
+    });
 
     const created = await withTenant(auth.tid, async (tx) => {
       const [row] = await tx
@@ -85,7 +94,7 @@ export async function POST(req: NextRequest) {
           category: data.category ?? null,
           lat: data.lat,
           lng: data.lng,
-          geofenceRadiusM: data.geofenceRadiusM,
+          geofenceRadiusM: data.geofenceRadiusM ?? geofenceSettings.defaultRadiusM,
           outstandingBalance: data.outstandingBalance,
           creditLimit: data.creditLimit ?? null,
           assignedAgentId: data.assignedAgentId ?? null,

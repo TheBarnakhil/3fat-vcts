@@ -8,6 +8,12 @@ import { appendAudit } from "@/lib/audit/chain";
 import { requireAuth, requireRole } from "@/lib/auth/context";
 import { badRequest, notFound, toResponse } from "@/lib/errors";
 import { TenantBrandingSchema, readBranding } from "@/lib/tenants/branding";
+import {
+	TenantGeofenceSettingsSchema,
+	TenantSyncSettingsSchema,
+	readGeofenceSettings,
+	readSyncSettings,
+} from "@/lib/tenants/settings";
 
 export const runtime = "nodejs";
 
@@ -39,6 +45,8 @@ export async function GET() {
 				slug: row.slug,
 				name: row.name,
 				branding: readBranding(row.settings),
+				geofence: readGeofenceSettings(row.settings),
+				sync: readSyncSettings(row.settings),
 			},
 		});
 	} catch (err) {
@@ -47,7 +55,9 @@ export async function GET() {
 }
 
 const PatchBody = z.object({
-	branding: TenantBrandingSchema,
+	branding: TenantBrandingSchema.optional(),
+	geofence: TenantGeofenceSettingsSchema.optional(),
+	sync: TenantSyncSettingsSchema.optional(),
 });
 
 export async function PATCH(req: NextRequest) {
@@ -58,6 +68,9 @@ export async function PATCH(req: NextRequest) {
 		if (!parsed.success) {
 			throw badRequest("Invalid body", parsed.error.flatten());
 		}
+		if (!parsed.data.branding && !parsed.data.geofence && !parsed.data.sync) {
+			throw badRequest("No tenant settings supplied");
+		}
 
 		const updated = await withoutTenant(async (tx) => {
 			const [row] = await tx
@@ -67,10 +80,17 @@ export async function PATCH(req: NextRequest) {
 				.limit(1);
 			if (!row) throw notFound("Tenant not found");
 
-			const before = readBranding(row.settings);
+			const before = {
+				branding: readBranding(row.settings),
+				geofence: readGeofenceSettings(row.settings),
+				sync: readSyncSettings(row.settings),
+			};
+			const nextSettings = (row.settings as Record<string, unknown>) ?? {};
 			const merged = {
-				...((row.settings as Record<string, unknown>) ?? {}),
-				branding: parsed.data.branding,
+				...nextSettings,
+				...(parsed.data.branding ? { branding: parsed.data.branding } : {}),
+				...(parsed.data.geofence ? { geofence: parsed.data.geofence } : {}),
+				...(parsed.data.sync ? { sync: parsed.data.sync } : {}),
 			};
 			const [next] = await tx
 				.update(tenants)
@@ -86,11 +106,15 @@ export async function PATCH(req: NextRequest) {
 			await appendAudit(tx, {
 				tenantId: auth.tid,
 				actorId: auth.sub,
-				action: "tenant.branding_updated",
+				action: "tenant.settings_updated",
 				entityType: "tenant",
 				entityId: auth.tid,
 				before,
-				after: parsed.data.branding,
+				after: {
+					...(parsed.data.branding ? { branding: parsed.data.branding } : {}),
+					...(parsed.data.geofence ? { geofence: parsed.data.geofence } : {}),
+					...(parsed.data.sync ? { sync: parsed.data.sync } : {}),
+				},
 			});
 
 			return next;
@@ -102,6 +126,8 @@ export async function PATCH(req: NextRequest) {
 				slug: updated.slug,
 				name: updated.name,
 				branding: readBranding(updated.settings),
+					geofence: readGeofenceSettings(updated.settings),
+					sync: readSyncSettings(updated.settings),
 			},
 		});
 	} catch (err) {

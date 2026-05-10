@@ -17,6 +17,35 @@ This repo is connected to Vercel at the repo root. Set the project's
 inside `web/`. Add the secrets from `web/.env.example` to the Vercel project
 environment variables (Preview + Production).
 
+### Post-deploy verification before the final live phase
+
+After schema-touching phases deploy to Vercel, run these from `web/` against the
+production database before considering the phase verified:
+
+```bash
+pnpm db:push
+pnpm db:rls
+pnpm verify:isolation
+```
+
+For Phase 11 platform/self-serve onboarding work, also run:
+
+```bash
+pnpm db:seed:platform
+pnpm verify:platform
+```
+
+Then verify the user-facing surfaces manually:
+
+- `/platform/login` with the seeded platform admin.
+- `/platform` tenant list/create/suspend/reactivate.
+- `/signup` and `/signup/verify` after `RESEND_API_KEY` + `SIGNUP_FROM_EMAIL`
+  are configured for real email delivery.
+
+Keep these steps complete before the final "make the app live" phase, where the
+signed Android build, Play internal testing, API-key SHA-1 restriction, and final
+Neon backup are handled.
+
 ## Local dev (web)
 
 ```bash

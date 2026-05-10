@@ -568,6 +568,10 @@ Every other tenant-scoped table identical.
 
 **Goal:** turn the release-prepped codebase into distributable production artifacts.
 
+- **Pre-live pending user steps (run after each schema-touching deploy):**
+  - `cd web && pnpm db:push && pnpm db:rls && pnpm verify:isolation`.
+  - For Phase 11 platform/signup work: `pnpm db:seed:platform && pnpm verify:platform`.
+  - Manually verify `/platform/login`, `/platform` tenant list/create/suspend/reactivate, and `/signup` + `/signup/verify` once `RESEND_API_KEY` + `SIGNUP_FROM_EMAIL` are configured.
 - Build the signed Android release APK/AAB from a Gradle-enabled machine with `android/app/google-services.json` present and `VCTS_RELEASE_*` env vars set.
 - Add the release keystore SHA-1 + package `com.threefat.vcts` to the restricted Android Google API key in GCP.
 - Upload to Play Console internal testing, verify install from Play, and confirm Crashlytics/Analytics sessions appear.
@@ -593,7 +597,11 @@ Every other tenant-scoped table identical.
   - `POST /api/signup/verify` hashes the token, locks the pending request, rejects expired/consumed links, re-checks tenant/user conflicts, then creates the tenant + first tenant `super_admin` in one transaction and appends `tenant.signup_verified` to the new tenant's audit chain.
   - Public `/signup` page collects company slug/name + first admin details and shows either "check your email" or a development verification link. `/signup/verify?token=...` consumes the token and directs the new admin to `/login`.
   - `verify:platform` now covers signup request metadata and auth boundaries around platform routes.
-- 11C [pending]. Tenant-level settings editor (geofence defaults, sync frequency, branding upload to R2 at `t/{slug}/brand/logo.png`).
+- 11C [completed]. Tenant-level settings editor.
+  - `/branding` is now the broader "Tenant settings" surface in the app nav. It still manages receipt branding + logo upload to R2, and now also edits `settings.geofence.defaultRadiusM`, `settings.geofence.minAccuracyM`, and `settings.sync.intervalMin`.
+  - `GET /api/tenants/me` returns typed `branding`, `geofence`, and `sync` settings with safe defaults. `PATCH /api/tenants/me` accepts any subset of those blocks, validates with Zod, merges into `tenants.settings`, and appends `tenant.settings_updated` to the tenant audit chain.
+  - New `lib/tenants/settings.ts` centralises tenant geofence/sync parsing so malformed JSONB falls back safely instead of breaking settings rendering.
+  - New customers created through `/api/customers` now default `geofenceRadiusM` from the tenant's `settings.geofence.defaultRadiusM` when the client omits a radius. The customer create dialog also initializes the radius slider from `/api/tenants/me`.
 - 11D [pending]. Usage metrics per tenant (collections/month, agents active, storage used) for future billing hook.
 
 ---

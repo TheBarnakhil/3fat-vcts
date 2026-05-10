@@ -21,6 +21,13 @@ type Branding = {
   logoUrl?: string;
   accentHsl?: string;
 };
+type GeofenceSettings = {
+  defaultRadiusM: number;
+  minAccuracyM: number;
+};
+type SyncSettings = {
+  intervalMin: number;
+};
 
 type TenantResponse = {
   tenant: {
@@ -28,6 +35,8 @@ type TenantResponse = {
     slug: string;
     name: string;
     branding: Branding;
+    geofence: GeofenceSettings;
+    sync: SyncSettings;
   };
 };
 
@@ -55,6 +64,11 @@ export default function BrandingPage() {
   const [editedDraft, setEditedDraft] = React.useState<Branding | null>(null);
   const draft: Branding = editedDraft ?? data?.tenant.branding ?? {};
   const setDraft = (next: Branding) => setEditedDraft(next);
+  const [editedGeofence, setEditedGeofence] = React.useState<GeofenceSettings | null>(null);
+  const geofence: GeofenceSettings =
+    editedGeofence ?? data?.tenant.geofence ?? { defaultRadiusM: 100, minAccuracyM: 50 };
+  const [editedSync, setEditedSync] = React.useState<SyncSettings | null>(null);
+  const sync: SyncSettings = editedSync ?? data?.tenant.sync ?? { intervalMin: 15 };
   const [logoFile, setLogoFile] = React.useState<File | null>(null);
   const [logoPreview, setLogoPreview] = React.useState<string | null>(null);
 
@@ -94,7 +108,11 @@ export default function BrandingPage() {
       const next: Branding = { ...draft, logoUrl: logoUrl ?? undefined };
       const res = await api<TenantResponse>("/api/tenants/me", {
         method: "PATCH",
-        body: JSON.stringify({ branding: next }),
+        body: JSON.stringify({
+          branding: next,
+          geofence,
+          sync,
+        }),
       });
       return res;
     },
@@ -102,7 +120,9 @@ export default function BrandingPage() {
       qc.setQueryData(["tenant", "me"], res);
       onLogoSelected(null);
       setEditedDraft(null); // resync to server response
-      toast.success("Branding saved.");
+      setEditedGeofence(null);
+      setEditedSync(null);
+      toast.success("Tenant settings saved.");
     },
     onError: (err) => {
       const msg = isApiError(err) ? err.message : (err as Error).message;
@@ -124,14 +144,14 @@ export default function BrandingPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Branding"
-        description="Tune the legal block, GSTIN and logo that appear on every receipt and verification page."
+        title="Tenant settings"
+        description="Tune receipt branding, default geofence policy and mobile sync behaviour for this tenant."
       />
 
       {isReadonly ? (
         <Card>
           <CardContent className="py-6 text-sm text-muted-foreground">
-            Only super admins can edit branding. Ask{" "}
+            Only super admins can edit tenant settings. Ask{" "}
             <span className="font-medium text-foreground">
               {tenantStore?.name ?? "your admin"}
             </span>{" "}
@@ -254,6 +274,87 @@ export default function BrandingPage() {
         </Card>
       </div>
 
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Collection geofence defaults</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <Field
+              label="Default radius"
+              hint="Used as the starting radius when a new customer is created."
+            >
+              <div className="flex items-center gap-3">
+                <Input
+                  type="number"
+                  min={50}
+                  max={500}
+                  step={10}
+                  value={geofence.defaultRadiusM}
+                  onChange={(e) =>
+                    setEditedGeofence({
+                      ...geofence,
+                      defaultRadiusM: Number(e.target.value),
+                    })
+                  }
+                  disabled={isReadonly}
+                />
+                <span className="w-12 text-sm text-muted-foreground">m</span>
+              </div>
+            </Field>
+            <Field
+              label="Minimum GPS accuracy"
+              hint="Collections with a weaker fix should be blocked or flagged by clients."
+            >
+              <div className="flex items-center gap-3">
+                <Input
+                  type="number"
+                  min={5}
+                  max={500}
+                  step={5}
+                  value={geofence.minAccuracyM}
+                  onChange={(e) =>
+                    setEditedGeofence({
+                      ...geofence,
+                      minAccuracyM: Number(e.target.value),
+                    })
+                  }
+                  disabled={isReadonly}
+                />
+                <span className="w-12 text-sm text-muted-foreground">m</span>
+              </div>
+            </Field>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Mobile sync</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <Field
+              label="Background sync interval"
+              hint="Target cadence for mobile sync jobs. Devices may delay based on battery/network policy."
+            >
+              <div className="flex items-center gap-3">
+                <Input
+                  type="number"
+                  min={5}
+                  max={120}
+                  step={5}
+                  value={sync.intervalMin}
+                  onChange={(e) =>
+                    setEditedSync({ ...sync, intervalMin: Number(e.target.value) })
+                  }
+                  disabled={isReadonly}
+                />
+                <span className="w-16 text-sm text-muted-foreground">minutes</span>
+              </div>
+            </Field>
+          </CardContent>
+        </Card>
+      </div>
+
       <div className="flex justify-end">
         <Button
           onClick={() => save.mutate()}
@@ -265,7 +366,7 @@ export default function BrandingPage() {
           ) : (
             <Save className="size-4" />
           )}
-          Save branding
+          Save settings
         </Button>
       </div>
     </div>

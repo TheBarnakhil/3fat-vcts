@@ -56,7 +56,7 @@ const NAV: readonly NavItem[] = [
   { href: "/reports", label: "Reports", icon: BarChart3 },
   { href: "/reviews", label: "Reviews", icon: AlertOctagon },
   { href: "/audit", label: "Audit", icon: ShieldCheck },
-  { href: "/branding", label: "Branding", icon: Palette },
+  { href: "/branding", label: "Tenant settings", icon: Palette },
   { href: "/map", label: "Live map", icon: MapPin },
 ];
 

@@ -59,6 +59,9 @@ type Agent = {
   isActive: boolean;
 };
 type AgentsResponse = { agents: Agent[] };
+type TenantSettingsResponse = {
+  tenant: { geofence?: { defaultRadiusM?: number } };
+};
 
 const DEFAULT_CENTER = { lat: 12.9716, lng: 77.5946 }; // Bengaluru-ish; overwritten after first save
 
@@ -81,6 +84,13 @@ export default function CustomersPage() {
     queryFn: () => api<AgentsResponse>("/api/agents"),
     enabled: canManage,
   });
+  const { data: tenantSettings } = useQuery<TenantSettingsResponse>({
+    queryKey: ["tenant", "me"],
+    queryFn: () => api<TenantSettingsResponse>("/api/tenants/me"),
+    enabled: canManage,
+  });
+  const defaultGeofenceRadiusM =
+    tenantSettings?.tenant.geofence?.defaultRadiusM ?? 100;
   const assignableAgents = React.useMemo(
     () => (agentsData?.agents ?? []).filter((a) => a.role === "agent" && a.isActive),
     [agentsData],
@@ -223,6 +233,7 @@ export default function CustomersPage() {
               <CustomerDialog
                 mode="create"
                 assignableAgents={assignableAgents}
+                defaultGeofenceRadiusM={defaultGeofenceRadiusM}
                 defaultLocation={
                   data?.customers[0]
                     ? {
@@ -289,6 +300,7 @@ export default function CustomersPage() {
             mode={canManage ? "edit" : "view"}
             initial={editing}
             assignableAgents={assignableAgents}
+            defaultGeofenceRadiusM={defaultGeofenceRadiusM}
             defaultLocation={{ lat: editing.lat, lng: editing.lng }}
             onClose={() => setEditing(null)}
           />
@@ -302,12 +314,14 @@ function CustomerDialog({
   mode,
   initial,
   assignableAgents,
+  defaultGeofenceRadiusM,
   defaultLocation,
   onClose,
 }: {
   mode: "create" | "edit" | "view";
   initial?: Customer;
   assignableAgents: Agent[];
+  defaultGeofenceRadiusM: number;
   defaultLocation: { lat: number; lng: number };
   onClose: () => void;
 }) {
@@ -321,7 +335,7 @@ function CustomerDialog({
     email: initial?.email ?? "",
     lat: initial?.lat ?? defaultLocation.lat,
     lng: initial?.lng ?? defaultLocation.lng,
-    geofenceRadiusM: initial?.geofenceRadiusM ?? 100,
+    geofenceRadiusM: initial?.geofenceRadiusM ?? defaultGeofenceRadiusM,
     outstandingBalance: initial?.outstandingBalance ?? 0,
     assignedAgentId: initial?.assignedAgentId ?? "",
   });
