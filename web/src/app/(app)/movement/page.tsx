@@ -328,7 +328,11 @@ function DaySummary({
 											</span>
 										</div>
 										<div className="mt-1 flex items-center justify-between text-muted-foreground">
-											<span>{formatRelative(v.dwellSeconds)} on-site</span>
+											<span>
+												{v.source === "collection"
+													? "Collection recorded"
+													: `${formatRelative(v.dwellSeconds)} on-site`}
+											</span>
 											{v.collectionId ? (
 												<span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
 													Collected

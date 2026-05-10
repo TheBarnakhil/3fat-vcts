@@ -13,6 +13,7 @@ import {
 import { withoutTenant, withTenant } from "@/db/tenant";
 import { env } from "@/lib/env";
 import { haversineMeters } from "@/lib/geo/haversine";
+import { upsertCollectionVisit } from "@/lib/visits/collection-visit";
 
 /**
  * Result of one recompute pass. The cron handler returns this verbatim
@@ -193,6 +194,18 @@ export async function recomputeForTenant(
 		stats.collectionsScanned = recentCollections.length;
 		const collectionLinkToleranceMs = cfg.collectionToleranceMin * 60 * 1000;
 
+		for (const c of recentCollections) {
+			const inserted = await upsertCollectionVisit(tx, {
+				tenantId,
+				agentId: c.agentId,
+				customerId: c.customerId,
+				collectionId: c.id,
+				collectedAt: c.collectedAt,
+			});
+			if (inserted) stats.visitsCreated += 1;
+			else stats.visitsSkippedDuplicate += 1;
+		}
+
 		for (const [agentId, fixes] of fixesByAgent) {
 			const visits = clusterFixesIntoVisits(fixes, customerRows, cfg);
 			for (const v of visits) {
@@ -209,6 +222,19 @@ export async function recomputeForTenant(
 						c.collectedAt >= linkWindowStart &&
 						c.collectedAt <= linkWindowEnd,
 				);
+				if (matchingCollection) {
+					const upgraded = await tx
+						.update(customerVisits)
+						.set({
+							startedAt: v.startedAt,
+							endedAt: v.endedAt,
+							dwellSeconds: v.dwellSeconds,
+							source: "location_logs",
+						})
+						.where(eq(customerVisits.collectionId, matchingCollection.id))
+						.returning({ id: customerVisits.id });
+					if (upgraded.length > 0) continue;
+				}
 				const inserted = await tx
 					.insert(customerVisits)
 					.values({

@@ -15,6 +15,7 @@ import {
 	fiscalYearForDate,
 	formatReceiptNo,
 } from "@/lib/receipts/format";
+import { upsertCollectionVisit } from "@/lib/visits/collection-visit";
 
 /**
  * Shared schema used by both `POST /api/collections` (single) and
@@ -226,6 +227,16 @@ export async function createCollectionInTx(
 			updatedAt: new Date(),
 		})
 		.where(eq(customers.id, data.customerId));
+
+	// A confirmed collection is a customer visit even when the periodic
+	// tracker has not emitted enough fixes to derive sustained dwell yet.
+	await upsertCollectionVisit(tx, {
+		tenantId: auth.tid,
+		agentId,
+		customerId: row.customerId,
+		collectionId: row.id,
+		collectedAt: row.collectedAt,
+	});
 
 	// --- Supervisor review row (one per drift event) -----------------------
 	if (supervisorReason) {
