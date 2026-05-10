@@ -50,6 +50,36 @@ const PAGE_HEIGHT = 841.89;
 const MARGIN = 48;
 const FOOTER_RESERVE = 64;
 
+/**
+ * pdf-lib's StandardFonts (Helvetica / HelveticaBold / Courier) all use
+ * WinAnsi encoding, which only covers a subset of Unicode. A single
+ * out-of-range glyph (an emoji in an agent name, a CJK character in a
+ * tenant address, even a curly quote pasted from Word) makes drawText
+ * either throw or silently drop content depending on the pdf-lib build,
+ * which in production manifests as "blank pages". We strip everything
+ * outside the safe WinAnsi range here and replace common typographic
+ * variants with their ASCII equivalents so the layout still reads right.
+ */
+function sanitizeForWinAnsi(input: string | null | undefined): string {
+	if (input === null || input === undefined) return "";
+	return String(input)
+		.replace(/[\u2010-\u2015]/g, "-") // dashes -> hyphen
+		.replace(/[\u2018\u2019\u201A\u201B]/g, "'") // single quotes
+		.replace(/[\u201C\u201D\u201E\u201F]/g, '"') // double quotes
+		.replace(/\u2026/g, "...") // ellipsis
+		.replace(/[\u00A0]/g, " ") // nbsp
+		.replace(/\u20B9/g, "Rs.") // ₹ rupee sign
+		.split("")
+		.map((ch) => {
+			const code = ch.charCodeAt(0);
+			// Printable ASCII + standard WinAnsi extensions.
+			if (code >= 0x20 && code <= 0x7e) return ch;
+			if (code >= 0xa0 && code <= 0xff) return ch;
+			return "?";
+		})
+		.join("");
+}
+
 function formatINR(n: number): string {
 	const parts = n.toFixed(2).split(".");
 	return `Rs. ${Number(parts[0]).toLocaleString("en-IN")}.${parts[1]}`;
@@ -68,10 +98,17 @@ function paymentModeLabel(m: LedgerInput["collections"][number]["paymentMode"]):
 	}
 }
 
-export async function renderLedgerPdf(input: LedgerInput): Promise<Uint8Array> {
+export interface RenderLedgerResult {
+	bytes: Uint8Array;
+	pageCount: number;
+}
+
+export async function renderLedgerPdfDetailed(
+	input: LedgerInput,
+): Promise<RenderLedgerResult> {
 	const pdf = await PDFDocument.create();
-	pdf.setTitle(`Ledger – ${input.customer.name}`);
-	pdf.setAuthor(input.tenant.legalName);
+	pdf.setTitle(sanitizeForWinAnsi(`Ledger - ${input.customer.name}`));
+	pdf.setAuthor(sanitizeForWinAnsi(input.tenant.legalName));
 	pdf.setProducer("VCTS");
 	pdf.setCreator("VCTS");
 	pdf.setCreationDate(input.generatedAt);
@@ -87,6 +124,29 @@ export async function renderLedgerPdf(input: LedgerInput): Promise<Uint8Array> {
 	const ruleColor = rgb(0.85, 0.86, 0.88);
 
 	const cols = layoutColumns();
+
+	// Wrapper that sanitises every string before forwarding to pdf-lib.
+	// Any drawText error (still possible for exotic surrogate pairs)
+	// is swallowed so a single bad character can't blank the entire PDF.
+	function safeDrawText(
+		p: ReturnType<PDFDocument["addPage"]>,
+		text: string,
+		opts: Parameters<ReturnType<PDFDocument["addPage"]>["drawText"]>[1],
+	) {
+		const sanitized = sanitizeForWinAnsi(text);
+		if (!sanitized) return;
+		try {
+			p.drawText(sanitized, opts);
+		} catch {
+			// Last-resort fallback - replace with question marks the same
+			// length so the layout still occupies the same space.
+			try {
+				p.drawText("?".repeat(Math.min(sanitized.length, 80)), opts);
+			} catch {
+				/* give up on this glyph */
+			}
+		}
+	}
 
 	let pageIndex = 0;
 	let page = pdf.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
@@ -114,7 +174,8 @@ export async function renderLedgerPdf(input: LedgerInput): Promise<Uint8Array> {
 	y = drawTotals(page, y);
 	drawFooter(page, pageIndex);
 
-	return await pdf.save();
+	const bytes = await pdf.save();
+	return { bytes, pageCount: pageIndex + 1 };
 
 	// --- inline helpers ----------------------------------------------------
 
@@ -138,7 +199,7 @@ export async function renderLedgerPdf(input: LedgerInput): Promise<Uint8Array> {
 		});
 
 		// Tenant block (left)
-		p.drawText(input.tenant.legalName, {
+		safeDrawText(p, input.tenant.legalName, {
 			x: MARGIN,
 			y: PAGE_HEIGHT - MARGIN - 24,
 			size: 18,
@@ -146,7 +207,7 @@ export async function renderLedgerPdf(input: LedgerInput): Promise<Uint8Array> {
 			color: ink,
 		});
 		if (input.tenant.address) {
-			p.drawText(input.tenant.address, {
+			safeDrawText(p, input.tenant.address, {
 				x: MARGIN,
 				y: PAGE_HEIGHT - MARGIN - 42,
 				size: 9,
@@ -162,7 +223,7 @@ export async function renderLedgerPdf(input: LedgerInput): Promise<Uint8Array> {
 			.filter(Boolean)
 			.join("   ");
 		if (meta) {
-			p.drawText(meta, {
+			safeDrawText(p, meta, {
 				x: MARGIN,
 				y: PAGE_HEIGHT - MARGIN - 56,
 				size: 9,
@@ -172,14 +233,14 @@ export async function renderLedgerPdf(input: LedgerInput): Promise<Uint8Array> {
 		}
 
 		// "LEDGER" + customer block (right)
-		p.drawText("LEDGER", {
+		safeDrawText(p, "LEDGER", {
 			x: PAGE_WIDTH - MARGIN - 96,
 			y: PAGE_HEIGHT - MARGIN - 30,
 			size: 14,
 			font: bold,
 			color: muted,
 		});
-		p.drawText(`Generated ${input.generatedAt.toUTCString().replace("GMT", "UTC")}`, {
+		safeDrawText(p, `Generated ${input.generatedAt.toUTCString().replace("GMT", "UTC")}`, {
 			x: PAGE_WIDTH - MARGIN - 220,
 			y: PAGE_HEIGHT - MARGIN - 50,
 			size: 9,
@@ -195,8 +256,8 @@ export async function renderLedgerPdf(input: LedgerInput): Promise<Uint8Array> {
 			thickness: 0.5,
 			color: ruleColor,
 		});
-		p.drawText("CUSTOMER", { x: MARGIN, y: bandY - 8, size: 8.5, font: bold, color: muted });
-		p.drawText(input.customer.name, {
+		safeDrawText(p, "CUSTOMER", { x: MARGIN, y: bandY - 8, size: 8.5, font: bold, color: muted });
+		safeDrawText(p, input.customer.name, {
 			x: MARGIN,
 			y: bandY - 26,
 			size: 14,
@@ -209,7 +270,7 @@ export async function renderLedgerPdf(input: LedgerInput): Promise<Uint8Array> {
 			input.customer.phone,
 			input.customer.address,
 		].filter((s): s is string => Boolean(s));
-		p.drawText(subParts.join("   ·   "), {
+		safeDrawText(p, subParts.join("   - "), {
 			x: MARGIN,
 			y: cy0,
 			size: 9,
@@ -219,14 +280,14 @@ export async function renderLedgerPdf(input: LedgerInput): Promise<Uint8Array> {
 		});
 
 		// Outstanding balance (right side of customer band)
-		p.drawText("OUTSTANDING", {
+		safeDrawText(p, "OUTSTANDING", {
 			x: PAGE_WIDTH - MARGIN - 200,
 			y: bandY - 8,
 			size: 8.5,
 			font: bold,
 			color: muted,
 		});
-		p.drawText(formatINR(input.customer.outstandingBalance), {
+		safeDrawText(p, formatINR(input.customer.outstandingBalance), {
 			x: PAGE_WIDTH - MARGIN - 200,
 			y: bandY - 30,
 			size: 16,
@@ -245,7 +306,7 @@ export async function renderLedgerPdf(input: LedgerInput): Promise<Uint8Array> {
 			height: 4,
 			color: accent,
 		});
-		p.drawText(`${input.tenant.legalName} - ${input.customer.name}`, {
+		safeDrawText(p, `${input.tenant.legalName} - ${input.customer.name}`, {
 			x: MARGIN,
 			y: PAGE_HEIGHT - MARGIN - 24,
 			size: 11,
@@ -259,11 +320,11 @@ export async function renderLedgerPdf(input: LedgerInput): Promise<Uint8Array> {
 		p: ReturnType<PDFDocument["addPage"]>,
 		startY: number,
 	): number {
-		p.drawText("DATE", { x: cols.xDate, y: startY, size: 8.5, font: bold, color: muted });
-		p.drawText("RECEIPT", { x: cols.xReceipt, y: startY, size: 8.5, font: bold, color: muted });
-		p.drawText("MODE", { x: cols.xMode, y: startY, size: 8.5, font: bold, color: muted });
-		p.drawText("AGENT", { x: cols.xAgent, y: startY, size: 8.5, font: bold, color: muted });
-		p.drawText("AMOUNT", { x: cols.xAmount, y: startY, size: 8.5, font: bold, color: muted });
+		safeDrawText(p, "DATE", { x: cols.xDate, y: startY, size: 8.5, font: bold, color: muted });
+		safeDrawText(p, "RECEIPT", { x: cols.xReceipt, y: startY, size: 8.5, font: bold, color: muted });
+		safeDrawText(p, "MODE", { x: cols.xMode, y: startY, size: 8.5, font: bold, color: muted });
+		safeDrawText(p, "AGENT", { x: cols.xAgent, y: startY, size: 8.5, font: bold, color: muted });
+		safeDrawText(p, "AMOUNT", { x: cols.xAmount, y: startY, size: 8.5, font: bold, color: muted });
 		const ruleY = startY - 6;
 		p.drawLine({
 			start: { x: MARGIN, y: ruleY },
@@ -280,12 +341,12 @@ export async function renderLedgerPdf(input: LedgerInput): Promise<Uint8Array> {
 		atY: number,
 	): void {
 		const dateStr = row.collectedAt.toISOString().slice(0, 10);
-		const receipt = row.receiptNo ?? "—";
+		const receipt = row.receiptNo ?? "-";
 		const agentName = row.agentName.length > 24
-			? row.agentName.slice(0, 23) + "…"
+			? row.agentName.slice(0, 23) + "..."
 			: row.agentName;
-		p.drawText(dateStr, { x: cols.xDate, y: atY, size: 9, font: mono, color: ink });
-		p.drawText(receipt, {
+		safeDrawText(p, dateStr, { x: cols.xDate, y: atY, size: 9, font: mono, color: ink });
+		safeDrawText(p, receipt, {
 			x: cols.xReceipt,
 			y: atY,
 			size: 9,
@@ -293,18 +354,18 @@ export async function renderLedgerPdf(input: LedgerInput): Promise<Uint8Array> {
 			color: row.reversed ? danger : ink,
 			maxWidth: cols.xMode - cols.xReceipt - 8,
 		});
-		p.drawText(paymentModeLabel(row.paymentMode), {
+		safeDrawText(p, paymentModeLabel(row.paymentMode), {
 			x: cols.xMode,
 			y: atY,
 			size: 9,
 			font: reg,
 			color: ink,
 		});
-		p.drawText(agentName, { x: cols.xAgent, y: atY, size: 9, font: reg, color: ink });
+		safeDrawText(p, agentName, { x: cols.xAgent, y: atY, size: 9, font: reg, color: ink });
 		const amt = formatINR(row.amount);
 		// Right-align amount: rough width estimate using mono font.
-		const w = mono.widthOfTextAtSize(amt, 9);
-		p.drawText(amt, {
+		const w = mono.widthOfTextAtSize(sanitizeForWinAnsi(amt), 9);
+		safeDrawText(p, amt, {
 			x: PAGE_WIDTH - MARGIN - w,
 			y: atY,
 			size: 9,
@@ -312,7 +373,7 @@ export async function renderLedgerPdf(input: LedgerInput): Promise<Uint8Array> {
 			color: row.reversed ? danger : ink,
 		});
 		if (row.reversed) {
-			p.drawText("REV", {
+			safeDrawText(p, "REV", {
 				x: cols.xAmount - 32,
 				y: atY,
 				size: 8,
@@ -332,23 +393,24 @@ export async function renderLedgerPdf(input: LedgerInput): Promise<Uint8Array> {
 		});
 		const labelOpts = { size: 8.5, font: bold, color: muted } as const;
 		const valueOpts = { size: 11, font: bold, color: ink } as const;
-		p.drawText("TOTAL RECEIPTS", { x: MARGIN, y, ...labelOpts });
-		p.drawText(`${input.totals.count}`, {
+		safeDrawText(p, "TOTAL RECEIPTS", { x: MARGIN, y, ...labelOpts });
+		safeDrawText(p, `${input.totals.count}`, {
 			x: MARGIN,
 			y: y - 16,
 			size: 14,
 			font: bold,
 			color: ink,
 		});
-		p.drawText("GROSS COLLECTED", { x: MARGIN + 140, y, ...labelOpts });
-		p.drawText(formatINR(input.totals.gross), {
+		safeDrawText(p, "GROSS COLLECTED", { x: MARGIN + 140, y, ...labelOpts });
+		safeDrawText(p, formatINR(input.totals.gross), {
 			x: MARGIN + 140,
 			y: y - 16,
 			...valueOpts,
 		});
-		p.drawText("REVERSED", { x: MARGIN + 320, y, ...labelOpts });
-		p.drawText(
-			`${input.totals.reversedCount} · ${formatINR(input.totals.reversedAmount)}`,
+		safeDrawText(p, "REVERSED", { x: MARGIN + 320, y, ...labelOpts });
+		safeDrawText(
+			p,
+			`${input.totals.reversedCount} - ${formatINR(input.totals.reversedAmount)}`,
 			{
 				x: MARGIN + 320,
 				y: y - 16,
@@ -357,8 +419,8 @@ export async function renderLedgerPdf(input: LedgerInput): Promise<Uint8Array> {
 				color: input.totals.reversedCount > 0 ? danger : ink,
 			},
 		);
-		p.drawText("NET", { x: PAGE_WIDTH - MARGIN - 100, y, ...labelOpts });
-		p.drawText(formatINR(input.totals.net), {
+		safeDrawText(p, "NET", { x: PAGE_WIDTH - MARGIN - 100, y, ...labelOpts });
+		safeDrawText(p, formatINR(input.totals.net), {
 			x: PAGE_WIDTH - MARGIN - 100,
 			y: y - 16,
 			size: 14,
@@ -379,7 +441,8 @@ export async function renderLedgerPdf(input: LedgerInput): Promise<Uint8Array> {
 			thickness: 0.5,
 			color: ruleColor,
 		});
-		p.drawText(
+		safeDrawText(
+			p,
 			"Computer-generated ledger. Each collection is signed into the tenant's audit chain.",
 			{
 				x: MARGIN,
@@ -390,7 +453,7 @@ export async function renderLedgerPdf(input: LedgerInput): Promise<Uint8Array> {
 				maxWidth: PAGE_WIDTH - MARGIN * 2 - 80,
 			},
 		);
-		p.drawText(`Page ${pageIdx + 1}`, {
+		safeDrawText(p, `Page ${pageIdx + 1}`, {
 			x: PAGE_WIDTH - MARGIN - 48,
 			y: footerY,
 			size: 8,
@@ -398,4 +461,13 @@ export async function renderLedgerPdf(input: LedgerInput): Promise<Uint8Array> {
 			color: muted,
 		});
 	}
+}
+
+/**
+ * Public entry point - renders the PDF and returns just the bytes.
+ * Backwards compatible with the original Track C3 signature.
+ */
+export async function renderLedgerPdf(input: LedgerInput): Promise<Uint8Array> {
+	const result = await renderLedgerPdfDetailed(input);
+	return result.bytes;
 }

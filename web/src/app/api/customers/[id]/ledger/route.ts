@@ -11,7 +11,10 @@ import {
 import { withoutTenant, withTenant } from "@/db/tenant";
 import { requireAuth } from "@/lib/auth/context";
 import { forbidden, notFound, toResponse } from "@/lib/errors";
-import { renderLedgerPdf, type LedgerInput } from "@/lib/receipts/ledger-pdf";
+import {
+	renderLedgerPdfDetailed,
+	type LedgerInput,
+} from "@/lib/receipts/ledger-pdf";
 import { readBranding } from "@/lib/tenants/branding";
 
 export const runtime = "nodejs";
@@ -104,6 +107,11 @@ export async function GET(
 				{ status: 400 },
 			);
 		}
+		// `?debug=1` — diagnostic JSON describing what the PDF path would
+		// have produced (byte length, page count, collection row count).
+		// Used to triage "blank PDF" reports without round-tripping bytes
+		// through the browser.
+		const wantDebug = url.searchParams.get("debug") === "1";
 
 		// Pull customer + collections + reversals inside a single tenant-scoped
 		// transaction so RLS + the explicit eq(tenantId) filters are applied
@@ -314,15 +322,43 @@ export async function GET(
 			totals,
 			generatedAt: new Date(),
 		};
-		const pdfBytes = await renderLedgerPdf(ledgerInput);
-		const buf = Buffer.from(pdfBytes);
-		return new NextResponse(new Uint8Array(buf), {
+		const { bytes: pdfBytes, pageCount } = await renderLedgerPdfDetailed(
+			ledgerInput,
+		);
+
+		// Diagnostic mode - returns the size/page count *plus* a base64
+		// preview of the first 32 bytes so we can sanity-check the PDF
+		// magic bytes (`%PDF-`) made it across the wire intact. Never
+		// returns the PDF body itself.
+		if (wantDebug) {
+			const head = Array.from(pdfBytes.slice(0, 32))
+				.map((b) => b.toString(16).padStart(2, "0"))
+				.join(" ");
+			const headAscii = Array.from(pdfBytes.slice(0, 8))
+				.map((b) => (b >= 0x20 && b <= 0x7e ? String.fromCharCode(b) : "."))
+				.join("");
+			return NextResponse.json({
+				ok: true,
+				bytes: pdfBytes.length,
+				pageCount,
+				rows: rows.length,
+				headHex: head,
+				headAscii,
+			});
+		}
+
+		// Stream the bytes directly. We deliberately do NOT set an explicit
+		// Content-Length - some Vercel edge configurations have been seen
+		// to truncate binary bodies when the header is set to a value that
+		// disagrees with the on-the-wire (post-compression) size.
+		return new Response(new Uint8Array(pdfBytes), {
 			status: 200,
 			headers: {
 				"Content-Type": "application/pdf",
-				"Content-Length": String(buf.length),
 				"Content-Disposition": `attachment; filename="${safeName}-ledger.pdf"`,
 				"Cache-Control": "private, max-age=0, must-revalidate",
+				"X-Ledger-Page-Count": String(pageCount),
+				"X-Ledger-Rows": String(rows.length),
 			},
 		});
 	} catch (err) {
