@@ -2,7 +2,12 @@ import { and, asc, between, eq } from "drizzle-orm";
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 
-import { customerVisits, locationLogs, users } from "@/db/schema";
+import {
+	collections as collectionsTable,
+	customerVisits,
+	locationLogs,
+	users,
+} from "@/db/schema";
 import { withoutTenant, withTenant } from "@/db/tenant";
 import { requireAuth, requireRole } from "@/lib/auth/context";
 import { badRequest, notFound, toResponse } from "@/lib/errors";
@@ -106,7 +111,26 @@ export async function GET(
 				)
 				.orderBy(asc(customerVisits.startedAt));
 
-			return { fixes, visits };
+			const collections = await tx
+				.select({
+					id: collectionsTable.id,
+					receiptNo: collectionsTable.receiptNo,
+					customerId: collectionsTable.customerId,
+					amount: collectionsTable.amount,
+					paymentMode: collectionsTable.paymentMode,
+					collectedAt: collectionsTable.collectedAt,
+					supervisorReview: collectionsTable.supervisorReview,
+				})
+				.from(collectionsTable)
+				.where(
+					and(
+						eq(collectionsTable.agentId, agentId),
+						between(collectionsTable.collectedAt, startUtc, endUtc),
+					),
+				)
+				.orderBy(asc(collectionsTable.collectedAt));
+
+			return { fixes, visits, collections };
 		});
 
 		return NextResponse.json({
@@ -124,6 +148,7 @@ export async function GET(
 			},
 			fixes: data.fixes,
 			visits: data.visits,
+			collections: data.collections,
 			truncated: data.fixes.length === MAX_FIXES,
 		});
 	} catch (err) {

@@ -178,9 +178,37 @@ export async function recomputeForTenant(
 
 		stats.agentsProcessed = fixesByAgent.size;
 
+		const recentCollections = await tx
+			.select({
+				id: collections.id,
+				agentId: collections.agentId,
+				customerId: collections.customerId,
+				collectedAt: collections.collectedAt,
+				receiptNo: collections.receiptNo,
+				supervisorReview: collections.supervisorReview,
+			})
+			.from(collections)
+			.where(gte(collections.collectedAt, windowStart));
+
+		stats.collectionsScanned = recentCollections.length;
+		const collectionLinkToleranceMs = cfg.collectionToleranceMin * 60 * 1000;
+
 		for (const [agentId, fixes] of fixesByAgent) {
 			const visits = clusterFixesIntoVisits(fixes, customerRows, cfg);
 			for (const v of visits) {
+				const linkWindowStart = new Date(
+					v.startedAt.getTime() - collectionLinkToleranceMs,
+				);
+				const linkWindowEnd = new Date(
+					v.endedAt.getTime() + collectionLinkToleranceMs,
+				);
+				const matchingCollection = recentCollections.find(
+					(c) =>
+						c.agentId === agentId &&
+						c.customerId === v.customerId &&
+						c.collectedAt >= linkWindowStart &&
+						c.collectedAt <= linkWindowEnd,
+				);
 				const inserted = await tx
 					.insert(customerVisits)
 					.values({
@@ -191,6 +219,7 @@ export async function recomputeForTenant(
 						endedAt: v.endedAt,
 						dwellSeconds: v.dwellSeconds,
 						source: "location_logs",
+						collectionId: matchingCollection?.id ?? null,
 					})
 					.onConflictDoNothing({
 						target: [
@@ -215,20 +244,6 @@ export async function recomputeForTenant(
 		// inside the customer's fence is suspicious - it might be a
 		// spoofed location or a missed tracker run. We raise an
 		// `unverified_visit` review row (idempotent on collection_id).
-		const recentCollections = await tx
-			.select({
-				id: collections.id,
-				agentId: collections.agentId,
-				customerId: collections.customerId,
-				collectedAt: collections.collectedAt,
-				receiptNo: collections.receiptNo,
-				supervisorReview: collections.supervisorReview,
-			})
-			.from(collections)
-			.where(gte(collections.collectedAt, windowStart));
-
-		stats.collectionsScanned = recentCollections.length;
-
 		for (const c of recentCollections) {
 			// Skip rows that have already been reviewed/flagged for this
 			// reason - the unique-by-(collection, reason) check below

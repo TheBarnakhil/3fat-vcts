@@ -52,11 +52,22 @@ type Visit = {
 	collectionId: string | null;
 };
 
+type MovementCollection = {
+	id: string;
+	receiptNo: string;
+	customerId: string;
+	amount: number;
+	paymentMode: "cash" | "cheque" | "bank_transfer" | "upi";
+	collectedAt: string;
+	supervisorReview: boolean;
+};
+
 type MovementResponse = {
 	agent: { id: string; name: string; email: string; agentCode: string | null };
 	window: { day: string; tz: string; startUtc: string; endUtc: string };
 	fixes: Fix[];
 	visits: Visit[];
+	collections: MovementCollection[];
 	truncated: boolean;
 };
 
@@ -82,6 +93,14 @@ function formatTime(iso: string): string {
 		hour: "2-digit",
 		minute: "2-digit",
 	});
+}
+
+function formatRupees(amount: number): string {
+	return new Intl.NumberFormat("en-IN", {
+		style: "currency",
+		currency: "INR",
+		maximumFractionDigits: 0,
+	}).format(amount);
 }
 
 export default function MovementPage() {
@@ -262,6 +281,11 @@ function DaySummary({
 					/>
 					<KpiRow icon={Users} label="Visits" value={`${data.visits.length}`} />
 					<KpiRow
+						icon={Users}
+						label="Collections"
+						value={`${data.collections.length}`}
+					/>
+					<KpiRow
 						icon={Clock}
 						label="On-site time"
 						value={formatRelative(totalDwell)}
@@ -315,6 +339,53 @@ function DaySummary({
 												</span>
 											)}
 										</div>
+									</li>
+								);
+							})}
+						</ol>
+					)}
+				</CardContent>
+			</Card>
+
+			<Card>
+				<CardHeader className="pb-2">
+					<CardTitle className="text-sm font-medium text-muted-foreground">
+						Collections recorded
+					</CardTitle>
+				</CardHeader>
+				<CardContent className="space-y-2 p-3">
+					{data.collections.length === 0 ? (
+						<p className="px-2 text-xs text-muted-foreground">
+							No collections recorded for this agent on the selected day.
+						</p>
+					) : (
+						<ol className="space-y-2">
+							{data.collections.map((collection) => {
+								const c = customerLookup.get(collection.customerId);
+								return (
+									<li
+										key={collection.id}
+										className="rounded-lg border bg-muted/20 p-2 text-xs"
+									>
+										<div className="flex items-baseline justify-between gap-2">
+											<span className="font-medium">
+												{c?.name ?? "Unknown customer"}
+											</span>
+											<span className="text-muted-foreground">
+												{formatTime(collection.collectedAt)}
+											</span>
+										</div>
+										<div className="mt-1 flex items-center justify-between gap-2 text-muted-foreground">
+											<span className="font-mono">{collection.receiptNo}</span>
+											<span className="font-medium text-foreground">
+												{formatRupees(collection.amount)}
+											</span>
+										</div>
+										{collection.supervisorReview ? (
+											<span className="mt-2 inline-flex rounded-full bg-destructive/10 px-2 py-0.5 text-[10px] font-medium text-destructive">
+												Needs review
+											</span>
+										) : null}
 									</li>
 								);
 							})}
