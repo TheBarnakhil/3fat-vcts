@@ -1,13 +1,14 @@
-import { eq, sql } from "drizzle-orm";
+import { and, eq, gte, sql } from "drizzle-orm";
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 
-import { collections, customers, tenants, users } from "@/db/schema";
+import { collections, customers, locationLogs, tenants, users } from "@/db/schema";
 import { withoutTenant } from "@/db/tenant";
 import { appendAudit } from "@/lib/audit/chain";
 import { requirePlatformAuth } from "@/lib/auth/platform-context";
 import { hashPassword } from "@/lib/auth/password";
 import { badRequest, conflict, toResponse } from "@/lib/errors";
+import { prefixUsage, r2Enabled } from "@/lib/storage/r2";
 
 export const runtime = "nodejs";
 
@@ -41,6 +42,9 @@ const CreateBody = z.object({
 export async function GET() {
 	try {
 		await requirePlatformAuth();
+		const now = new Date();
+		const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+		const activeSince = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
 		const rows = await withoutTenant(async (tx) => {
 			const tenantRows = await tx
@@ -76,6 +80,45 @@ export async function GET() {
 				})
 				.from(collections)
 				.groupBy(collections.tenantId);
+			const monthCollections = await tx
+				.select({
+					tenantId: collections.tenantId,
+					count: sql<number>`count(*)::int`,
+					amount: sql<number>`coalesce(sum(${collections.amount}), 0)::float8`,
+				})
+				.from(collections)
+				.where(gte(collections.collectedAt, monthStart))
+				.groupBy(collections.tenantId);
+			const activeAgentRows = await tx
+				.select({
+					tenantId: users.tenantId,
+					count: sql<number>`count(distinct ${users.id})::int`,
+				})
+				.from(users)
+				.leftJoin(
+					locationLogs,
+					and(
+						eq(locationLogs.agentId, users.id),
+						eq(locationLogs.tenantId, users.tenantId),
+						gte(locationLogs.loggedAt, activeSince),
+					),
+				)
+				.leftJoin(
+					collections,
+					and(
+						eq(collections.agentId, users.id),
+						eq(collections.tenantId, users.tenantId),
+						gte(collections.collectedAt, activeSince),
+					),
+				)
+				.where(
+					and(
+						eq(users.role, "agent"),
+						eq(users.isActive, true),
+						sql`(${locationLogs.id} is not null or ${collections.id} is not null)`,
+					),
+				)
+				.groupBy(users.tenantId);
 
 			const usersByTenant = new Map(userCounts.map((r) => [r.tenantId, r.count]));
 			const customersByTenant = new Map(
@@ -83,6 +126,15 @@ export async function GET() {
 			);
 			const collectionsByTenant = new Map(
 				collectionCounts.map((r) => [r.tenantId, r.count]),
+			);
+			const monthlyByTenant = new Map(
+				monthCollections.map((r) => [
+					r.tenantId,
+					{ count: r.count, amount: r.amount },
+				]),
+			);
+			const activeAgentsByTenant = new Map(
+				activeAgentRows.map((r) => [r.tenantId, r.count]),
 			);
 
 			return tenantRows.map((t) => ({
@@ -92,10 +144,25 @@ export async function GET() {
 					customers: customersByTenant.get(t.id) ?? 0,
 					collections: collectionsByTenant.get(t.id) ?? 0,
 				},
+				usage: {
+					monthCollections: monthlyByTenant.get(t.id)?.count ?? 0,
+					monthAmount: monthlyByTenant.get(t.id)?.amount ?? 0,
+					activeAgents30d: activeAgentsByTenant.get(t.id) ?? 0,
+					storage: null as null | { objects: number; bytes: number },
+				},
 			}));
 		});
 
-		return NextResponse.json({ tenants: rows });
+		const withStorage = r2Enabled()
+			? await Promise.all(
+					rows.map(async (row) => {
+						const storage = await prefixUsage(`t/${row.slug}/`).catch(() => null);
+						return { ...row, usage: { ...row.usage, storage } };
+					}),
+				)
+			: rows;
+
+		return NextResponse.json({ tenants: withStorage });
 	} catch (err) {
 		return toResponse(err);
 	}

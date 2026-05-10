@@ -602,7 +602,11 @@ Every other tenant-scoped table identical.
   - `GET /api/tenants/me` returns typed `branding`, `geofence`, and `sync` settings with safe defaults. `PATCH /api/tenants/me` accepts any subset of those blocks, validates with Zod, merges into `tenants.settings`, and appends `tenant.settings_updated` to the tenant audit chain.
   - New `lib/tenants/settings.ts` centralises tenant geofence/sync parsing so malformed JSONB falls back safely instead of breaking settings rendering.
   - New customers created through `/api/customers` now default `geofenceRadiusM` from the tenant's `settings.geofence.defaultRadiusM` when the client omits a radius. The customer create dialog also initializes the radius slider from `/api/tenants/me`.
-- 11D [pending]. Usage metrics per tenant (collections/month, agents active, storage used) for future billing hook.
+- 11D [completed]. Usage metrics per tenant.
+  - Platform tenant listing now includes usage signals: current-calendar-month collection count and amount, active agents seen via location logs or collections in the last 30 days, and R2 storage object/byte usage when R2 credentials are configured.
+  - `lib/storage/r2.ts` gained `prefixUsage(prefix)` using S3-compatible `ListObjectsV2` pagination to measure each tenant prefix (`t/{slug}/`) without relying on guessed attachment sizes.
+  - `/platform` renders aggregate KPI cards for this-month collections, active agents, and storage, plus per-tenant table columns for monthly collection volume/amount, active agents, and storage objects/bytes.
+  - `verify:platform` now asserts the tenant list includes usage metrics in addition to auth boundary and signup checks.
 
 ---
 

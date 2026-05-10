@@ -103,12 +103,28 @@ async function main() {
 	expectStatus("GET /api/platform/tenants as platform admin", tenants.status, 200);
 	if (tenants.status === 200) {
 		const body = (await tenants.json()) as {
-			tenants?: Array<{ id?: string; slug?: string; counts?: unknown }>;
+			tenants?: Array<{ id?: string; slug?: string; counts?: unknown; usage?: {
+				monthCollections?: number;
+				monthAmount?: number;
+				activeAgents30d?: number;
+				storage?: unknown;
+			} }>;
 		};
 		if (Array.isArray(body.tenants) && body.tenants.some((t) => t.slug === "acme")) {
 			ok("tenant list includes seeded acme tenant");
 		} else {
 			fail("tenant list shape", "expected tenants[] including acme");
+		}
+		const acme = body.tenants?.find((t) => t.slug === "acme");
+		if (
+			acme?.usage &&
+			typeof acme.usage.monthCollections === "number" &&
+			typeof acme.usage.monthAmount === "number" &&
+			typeof acme.usage.activeAgents30d === "number"
+		) {
+			ok("tenant list includes usage metrics");
+		} else {
+			fail("tenant usage shape", "expected monthCollections/monthAmount/activeAgents30d");
 		}
 	}
 

@@ -1,6 +1,7 @@
 import {
 	GetObjectCommand,
 	HeadObjectCommand,
+	ListObjectsV2Command,
 	PutObjectCommand,
 	S3Client,
 } from "@aws-sdk/client-s3";
@@ -71,6 +72,31 @@ export function signatureKey(tenantSlug: string, collectionId: string): string {
 
 export function brandingLogoKey(tenantSlug: string): string {
 	return `t/${tenantSlug}/branding/logo.png`;
+}
+
+export async function prefixUsage(
+	prefix: string,
+): Promise<{ objects: number; bytes: number }> {
+	let continuationToken: string | undefined;
+	let objects = 0;
+	let bytes = 0;
+
+	do {
+		const res = await client().send(
+			new ListObjectsV2Command({
+				Bucket: env.R2_BUCKET!,
+				Prefix: prefix,
+				ContinuationToken: continuationToken,
+			}),
+		);
+		for (const obj of res.Contents ?? []) {
+			objects += 1;
+			bytes += obj.Size ?? 0;
+		}
+		continuationToken = res.IsTruncated ? res.NextContinuationToken : undefined;
+	} while (continuationToken);
+
+	return { objects, bytes };
 }
 
 export async function objectExists(key: string): Promise<boolean> {

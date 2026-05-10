@@ -48,6 +48,12 @@ type PlatformTenant = {
 	createdAt: string;
 	updatedAt: string;
 	counts: { users: number; customers: number; collections: number };
+	usage: {
+		monthCollections: number;
+		monthAmount: number;
+		activeAgents30d: number;
+		storage: null | { objects: number; bytes: number };
+	};
 };
 
 type TenantsResponse = { tenants: PlatformTenant[] };
@@ -195,6 +201,42 @@ export default function PlatformPage() {
 						helper="Across all tenants"
 					/>
 				</div>
+				<div className="grid gap-4 md:grid-cols-3">
+					<StatCard
+						label="This month"
+						value={
+							tenants.data?.tenants.reduce(
+								(sum, t) => sum + t.usage.monthCollections,
+								0,
+							) ?? 0
+						}
+						helper="Collections recorded"
+					/>
+					<StatCard
+						label="Active agents"
+						value={
+							tenants.data?.tenants.reduce(
+								(sum, t) => sum + t.usage.activeAgents30d,
+								0,
+							) ?? 0
+						}
+						helper="Seen in last 30 days"
+					/>
+					<StatCard
+						label="R2 storage"
+						valueText={formatBytes(
+							tenants.data?.tenants.reduce(
+								(sum, t) => sum + (t.usage.storage?.bytes ?? 0),
+								0,
+							) ?? 0,
+						)}
+						helper={
+							tenants.data?.tenants.some((t) => t.usage.storage)
+								? "Measured from tenant prefixes"
+								: "R2 not configured or unavailable"
+						}
+					/>
+				</div>
 
 				<Card>
 					<CardContent className="p-0">
@@ -206,6 +248,9 @@ export default function PlatformPage() {
 									<TableHead className="text-right">Users</TableHead>
 									<TableHead className="text-right">Customers</TableHead>
 									<TableHead className="text-right">Collections</TableHead>
+									<TableHead className="text-right">Month</TableHead>
+									<TableHead className="text-right">Active agents</TableHead>
+									<TableHead className="text-right">Storage</TableHead>
 									<TableHead>Created</TableHead>
 									<TableHead className="text-right">Actions</TableHead>
 								</TableRow>
@@ -238,6 +283,29 @@ export default function PlatformPage() {
 										<TableCell className="text-right tabular-nums">
 											{tenant.counts.collections}
 										</TableCell>
+										<TableCell className="text-right">
+											<div className="tabular-nums">
+												{tenant.usage.monthCollections}
+											</div>
+											<div className="text-xs text-muted-foreground tabular-nums">
+												{formatINR(tenant.usage.monthAmount)}
+											</div>
+										</TableCell>
+										<TableCell className="text-right tabular-nums">
+											{tenant.usage.activeAgents30d}
+										</TableCell>
+										<TableCell className="text-right">
+											<div className="tabular-nums">
+												{tenant.usage.storage
+													? formatBytes(tenant.usage.storage.bytes)
+													: "n/a"}
+											</div>
+											{tenant.usage.storage ? (
+												<div className="text-xs text-muted-foreground tabular-nums">
+													{tenant.usage.storage.objects} objects
+												</div>
+											) : null}
+										</TableCell>
 										<TableCell className="font-mono text-xs text-muted-foreground">
 											{tenant.createdAt.slice(0, 10)}
 										</TableCell>
@@ -260,7 +328,7 @@ export default function PlatformPage() {
 								))}
 								{tenants.data?.tenants.length === 0 && (
 									<TableRow>
-										<TableCell colSpan={7} className="py-10 text-center text-sm text-muted-foreground">
+										<TableCell colSpan={10} className="py-10 text-center text-sm text-muted-foreground">
 											No tenants yet.
 										</TableCell>
 									</TableRow>
@@ -277,21 +345,43 @@ export default function PlatformPage() {
 function StatCard({
 	label,
 	value,
+	valueText,
 	helper,
 }: {
 	label: string;
-	value: number;
+	value?: number;
+	valueText?: string;
 	helper: string;
 }) {
 	return (
 		<Card>
 			<CardContent className="p-5">
 				<div className="text-sm text-muted-foreground">{label}</div>
-				<div className="mt-2 text-3xl font-semibold tabular-nums">{value}</div>
+				<div className="mt-2 text-3xl font-semibold tabular-nums">
+					{valueText ?? value ?? 0}
+				</div>
 				<div className="mt-1 text-xs text-muted-foreground">{helper}</div>
 			</CardContent>
 		</Card>
 	);
+}
+
+function formatBytes(bytes: number): string {
+	if (bytes <= 0) return "0 B";
+	const units = ["B", "KB", "MB", "GB", "TB"];
+	let value = bytes;
+	let unit = 0;
+	while (value >= 1024 && unit < units.length - 1) {
+		value /= 1024;
+		unit += 1;
+	}
+	return `${value.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`;
+}
+
+function formatINR(amount: number): string {
+	return `Rs. ${amount.toLocaleString("en-IN", {
+		maximumFractionDigits: 0,
+	})}`;
 }
 
 function CreateTenantDialog({ onDone }: { onDone: () => void }) {
