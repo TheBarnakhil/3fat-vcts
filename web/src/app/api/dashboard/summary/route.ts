@@ -41,15 +41,21 @@ export async function GET() {
 		const agentScoped = auth.role === "agent";
 
 		const data = await withTenant(auth.tid, async (tx) => {
+			// Defense in depth: every aggregation includes the tenantId predicate
+			// so a misconfigured RLS policy cannot leak cross-tenant rows into a
+			// dashboard sum.
+			const collectionTenant = eq(collections.tenantId, auth.tid);
+			const visitTenant = eq(customerVisits.tenantId, auth.tid);
+			const locationTenant = eq(locationLogs.tenantId, auth.tid);
 			const collectionScope = agentScoped
-				? eq(collections.agentId, auth.sub)
-				: undefined;
+				? and(collectionTenant, eq(collections.agentId, auth.sub))
+				: collectionTenant;
 			const visitScope = agentScoped
-				? eq(customerVisits.agentId, auth.sub)
-				: undefined;
+				? and(visitTenant, eq(customerVisits.agentId, auth.sub))
+				: visitTenant;
 			const locationScope = agentScoped
-				? eq(locationLogs.agentId, auth.sub)
-				: undefined;
+				? and(locationTenant, eq(locationLogs.agentId, auth.sub))
+				: locationTenant;
 
 			const [today] = await tx
 				.select({
@@ -147,7 +153,13 @@ export async function GET() {
 					customerCode: customers.code,
 				})
 				.from(collections)
-				.innerJoin(customers, eq(customers.id, collections.customerId))
+				.innerJoin(
+					customers,
+					and(
+						eq(customers.id, collections.customerId),
+						eq(customers.tenantId, auth.tid),
+					),
+				)
 				.where(collectionScope)
 				.orderBy(desc(collections.collectedAt))
 				.limit(5);

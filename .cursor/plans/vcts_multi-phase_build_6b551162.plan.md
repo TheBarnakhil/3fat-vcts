@@ -500,6 +500,28 @@ Tracked in tracks rather than a single sweep. Track A first because everything e
   - Drizzle handles parameterised queries everywhere - manual audit confirmed (no string-concat SQL in the codebase).
 - **Key rotation runbook** at `docs/runbooks/key-rotation.md`: per-secret instructions for `JWT_*`, `PASSWORD_PEPPER`, `AUDIT_HMAC_SECRET`, `APP_DB_PASSWORD`, `CRON_SECRET`, R2 keys, plus a force-logout SQL recipe and a post-rotation verification checklist.
 
+### Track A.6 - Cross-tenant RLS regression [completed - postmortem]
+
+**Symptom:** While verifying Track B against prod, the extended verifier surfaced 9 failures (`customers` + `collections` list overlap, every cross-tenant `/api/customers/{id}` and `/api/collections/{id}` route returning 200 / 201 / 500 instead of 404, and `/attachments` info-leaking via 403 instead of 404). Earlier 46/46 baseline had run against an environment where this wasn't visible.
+
+**Root cause:** RLS had **never been enabled in production**. The `apply-rls.ts` script (`pnpm db:rls`) was missed during initial provisioning. Postgres remembered `FORCE ROW LEVEL SECURITY` (it's sticky across DISABLE) but `relrowsecurity=false` and zero `tenant_isolation` policies meant every cross-tenant query returned all rows. The `vcts_app` role had `bypassrls=false` correctly, but RLS-without-policies still admits everything. Confirmed via the new before/after diagnostic in `apply-rls.ts`:
+```
+customers              rls=false forced=true policies=0   (BEFORE)
+customers              rls=true  forced=true policies=1   (AFTER)
+```
+Every other tenant-scoped table identical.
+
+**Why the routes that did work, worked:** `/api/agents/[id]` and `/api/collections/[id]/receipt` happened to do a follow-up `withoutTenant` lookup explicitly filtered by `tenantId`, so the cross-tenant agent/tenant didn't match and the route returned 404 anyway. The customer/collection routes had no such fallback - they trusted RLS as the only filter.
+
+**Two-track fix:**
+
+1. **Restore RLS:** `pnpm db:rls` re-applied. The script now prints `=== RLS state BEFORE ===` and `=== RLS state AFTER ===` blocks (role bypassrls bit, every tenant table's `relrowsecurity` / `relforcerowsecurity` / policy count) so any future drift is immediately visible instead of silently leaking data.
+2. **Defense in depth:** every `withTenant` query on a tenant-scoped table now AND's `eq(table.tenantId, auth.tid)` into its WHERE clause. Mirrors the agents-route pattern that has never failed. Touches `customers`, `collections`, `collection_reversals`, `supervisor_reviews`, `customer_visits`, `location_logs`, the public verification page, the `lib/visits/recompute.ts` cron worker, and the dashboard / reports aggregates so a misconfigured policy can never silently absorb cross-tenant rows into a KPI sum.
+
+**Verifier hardening:** `verify-isolation.ts` extended with three new checks - `/sync/pull` customer overlap, `/sync/pull` collection overlap, and `/reports/summary` per-tenant scoping. Without these, the same regression would have stayed invisible on the offline-ingestion path. New baseline: **55/55 passing** against prod.
+
+**Bootstrap rule (added to `docs/runbooks/key-rotation.md`):** first-time provisioning of a new prod DB requires `pnpm db:push && pnpm db:rls`, never one without the other. Schema-touching tracks must ship the migration in a separate commit *before* the code that uses the new column - we hit a related "deployed before migrated" outage on Track B that the new ordering rule prevents.
+
 ### Track B - Device binding [completed]
 
 **Threat model:** an attacker who exfiltrates the encrypted refresh token from a stolen device must not be able to replay it from a different device. We bind each refresh-token row to a stable per-install UUID and reject mismatched refreshes.

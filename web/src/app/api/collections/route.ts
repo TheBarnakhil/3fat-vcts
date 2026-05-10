@@ -65,7 +65,7 @@ export async function GET(req: NextRequest) {
 			auth.role === "agent" ? auth.sub : agentIdParam ?? null;
 
 		const rows = await withTenant(auth.tid, async (tx) => {
-			const conds = [];
+			const conds = [eq(collectionsTable.tenantId, auth.tid)];
 			if (effectiveAgentId)
 				conds.push(eq(collectionsTable.agentId, effectiveAgentId));
 			if (customerId) conds.push(eq(collectionsTable.customerId, customerId));
@@ -91,8 +91,14 @@ export async function GET(req: NextRequest) {
 					createdAt: collectionsTable.createdAt,
 				})
 				.from(collectionsTable)
-				.innerJoin(customers, eq(customers.id, collectionsTable.customerId))
-				.where(conds.length ? and(...conds) : undefined)
+				.innerJoin(
+					customers,
+					and(
+						eq(customers.id, collectionsTable.customerId),
+						eq(customers.tenantId, auth.tid),
+					),
+				)
+				.where(and(...conds))
 				.orderBy(desc(collectionsTable.collectedAt))
 				.limit(limit);
 		});

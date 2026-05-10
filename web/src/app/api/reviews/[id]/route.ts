@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 
@@ -43,7 +43,12 @@ export async function PATCH(
 			const [existing] = await tx
 				.select()
 				.from(supervisorReviews)
-				.where(eq(supervisorReviews.id, id))
+				.where(
+					and(
+						eq(supervisorReviews.id, id),
+						eq(supervisorReviews.tenantId, auth.tid),
+					),
+				)
 				.limit(1);
 			if (!existing) throw notFound("Review not found");
 
@@ -56,7 +61,12 @@ export async function PATCH(
 			const [updated] = await tx
 				.update(supervisorReviews)
 				.set(next)
-				.where(eq(supervisorReviews.id, id))
+				.where(
+					and(
+						eq(supervisorReviews.id, id),
+						eq(supervisorReviews.tenantId, auth.tid),
+					),
+				)
 				.returning();
 
 			// Sync the parent collection's flag. We re-derive from "any open
@@ -64,7 +74,12 @@ export async function PATCH(
 			const remainingOpen = await tx
 				.select({ id: supervisorReviews.id })
 				.from(supervisorReviews)
-				.where(eq(supervisorReviews.collectionId, existing.collectionId));
+				.where(
+					and(
+						eq(supervisorReviews.collectionId, existing.collectionId),
+						eq(supervisorReviews.tenantId, auth.tid),
+					),
+				);
 			const stillOpen = remainingOpen.some((r) => {
 				if (r.id === id) {
 					return action === "reopen";
@@ -75,7 +90,12 @@ export async function PATCH(
 			await tx
 				.update(collections)
 				.set({ supervisorReview: stillOpen })
-				.where(eq(collections.id, existing.collectionId));
+				.where(
+					and(
+						eq(collections.id, existing.collectionId),
+						eq(collections.tenantId, auth.tid),
+					),
+				);
 
 			await appendAudit(tx, {
 				tenantId: auth.tid,

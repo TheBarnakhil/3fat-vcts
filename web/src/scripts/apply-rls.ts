@@ -191,8 +191,42 @@ async function applyReceiptSequence(): Promise<void> {
 	console.log("  [ok] function next_receipt_seq()");
 }
 
+async function dumpState(label: string): Promise<void> {
+	console.log(`\n=== ${label} ===`);
+	const role = (await sql.query(
+		`SELECT rolname, rolbypassrls, rolcanlogin
+		 FROM pg_roles WHERE rolname = 'vcts_app'`,
+	)) as Array<{ rolname: string; rolbypassrls: boolean; rolcanlogin: boolean }>;
+	if (role.length === 0) {
+		console.log("  vcts_app role: MISSING");
+	} else {
+		const r = role[0];
+		console.log(
+			`  vcts_app role: bypassrls=${r.rolbypassrls} canlogin=${r.rolcanlogin}`,
+		);
+	}
+	for (const t of TENANT_TABLES) {
+		const cls = (await sql.query(
+			`SELECT relrowsecurity AS rls, relforcerowsecurity AS forced
+			 FROM pg_class WHERE relname = $1 AND relnamespace = 'public'::regnamespace`,
+			[t],
+		)) as Array<{ rls: boolean; forced: boolean }>;
+		const pol = (await sql.query(
+			`SELECT count(*)::int AS n FROM pg_policies
+			 WHERE schemaname = 'public' AND tablename = $1`,
+			[t],
+		)) as Array<{ n: number }>;
+		const c = cls[0];
+		console.log(
+			`  ${t.padEnd(22)} rls=${c?.rls ?? "?"} forced=${c?.forced ?? "?"} policies=${pol[0]?.n ?? "?"}`,
+		);
+	}
+}
+
 async function main() {
-	console.log("Provisioning vcts_app role...");
+	await dumpState("RLS state BEFORE");
+
+	console.log("\nProvisioning vcts_app role...");
 	await ensureAppRole();
 	await grantAppPrivileges();
 
@@ -201,6 +235,8 @@ async function main() {
 
 	console.log("\nApplying helper SQL functions...");
 	await applyReceiptSequence();
+
+	await dumpState("RLS state AFTER");
 
 	console.log("\nDone. Runtime connections should use APP_DATABASE_URL");
 	console.log("(constructed automatically by src/db/client.ts from DATABASE_URL + APP_DB_PASSWORD).");

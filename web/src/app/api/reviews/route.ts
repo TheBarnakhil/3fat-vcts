@@ -1,4 +1,4 @@
-import { desc, eq, isNotNull, isNull } from "drizzle-orm";
+import { and, desc, eq, isNotNull, isNull } from "drizzle-orm";
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 
@@ -41,7 +41,7 @@ export async function GET(req: NextRequest) {
 		const { status } = parsed.data;
 
 		const filtered = await withTenant(auth.tid, async (tx) => {
-			const where =
+			const statusCond =
 				status === "pending"
 					? isNull(supervisorReviews.resolvedAt)
 					: status === "resolved"
@@ -66,9 +66,21 @@ export async function GET(req: NextRequest) {
 					collectedAt: collections.collectedAt,
 				})
 				.from(supervisorReviews)
-				.leftJoin(collections, eq(collections.id, supervisorReviews.collectionId))
-				.leftJoin(customers, eq(customers.id, collections.customerId))
-				.where(where)
+				.leftJoin(
+					collections,
+					and(
+						eq(collections.id, supervisorReviews.collectionId),
+						eq(collections.tenantId, auth.tid),
+					),
+				)
+				.leftJoin(
+					customers,
+					and(
+						eq(customers.id, collections.customerId),
+						eq(customers.tenantId, auth.tid),
+					),
+				)
+				.where(and(eq(supervisorReviews.tenantId, auth.tid), statusCond))
 				.orderBy(desc(supervisorReviews.createdAt))
 				.limit(500);
 		});

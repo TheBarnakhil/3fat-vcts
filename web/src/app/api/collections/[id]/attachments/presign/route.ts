@@ -96,11 +96,19 @@ export async function POST(
 					agentId: collectionsTable.agentId,
 				})
 				.from(collectionsTable)
-				.where(eq(collectionsTable.id, id))
+				.where(
+					and(
+						eq(collectionsTable.id, id),
+						eq(collectionsTable.tenantId, auth.tid),
+					),
+				)
 				.limit(1),
 		);
 		if (!collection) throw notFound("Collection not found");
 		if (auth.role === "agent" && collection.agentId !== auth.sub) {
+			// Cross-tenant attempts never reach here (the lookup above is
+			// tenantId-filtered), so this branch is exclusively same-tenant
+			// cross-agent and 403 is the right signal.
 			throw forbidden("This collection is not yours");
 		}
 

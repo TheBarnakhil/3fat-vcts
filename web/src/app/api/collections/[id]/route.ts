@@ -31,15 +31,31 @@ export async function GET(
 					customerPhone: customers.phone,
 				})
 				.from(collectionsTable)
-				.innerJoin(customers, eq(customers.id, collectionsTable.customerId))
-				.where(eq(collectionsTable.id, id))
+				.innerJoin(
+					customers,
+					and(
+						eq(customers.id, collectionsTable.customerId),
+						eq(customers.tenantId, auth.tid),
+					),
+				)
+				.where(
+					and(
+						eq(collectionsTable.id, id),
+						eq(collectionsTable.tenantId, auth.tid),
+					),
+				)
 				.limit(1);
 			if (!row) return null;
 
 			const reversals = await tx
 				.select()
 				.from(collectionReversals)
-				.where(eq(collectionReversals.originalCollectionId, id))
+				.where(
+					and(
+						eq(collectionReversals.originalCollectionId, id),
+						eq(collectionReversals.tenantId, auth.tid),
+					),
+				)
 				.orderBy(desc(collectionReversals.reversedAt));
 
 			return { ...row, reversals };

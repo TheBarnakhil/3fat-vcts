@@ -1,4 +1,4 @@
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 
@@ -43,7 +43,12 @@ export async function POST(
 			const [orig] = await tx
 				.select()
 				.from(collectionsTable)
-				.where(eq(collectionsTable.id, id))
+				.where(
+					and(
+						eq(collectionsTable.id, id),
+						eq(collectionsTable.tenantId, auth.tid),
+					),
+				)
 				.limit(1);
 			if (!orig) throw notFound("Collection not found");
 
@@ -53,7 +58,12 @@ export async function POST(
 			const existing = await tx
 				.select({ id: collectionReversals.id })
 				.from(collectionReversals)
-				.where(eq(collectionReversals.originalCollectionId, id))
+				.where(
+					and(
+						eq(collectionReversals.originalCollectionId, id),
+						eq(collectionReversals.tenantId, auth.tid),
+					),
+				)
 				.limit(1);
 			if (existing[0]) {
 				throw new HttpError(
@@ -82,7 +92,12 @@ export async function POST(
 					outstandingBalance: sql`${customers.outstandingBalance} + ${orig.amount}`,
 					updatedAt: new Date(),
 				})
-				.where(eq(customers.id, orig.customerId));
+				.where(
+					and(
+						eq(customers.id, orig.customerId),
+						eq(customers.tenantId, auth.tid),
+					),
+				);
 
 			await appendAudit(tx, {
 				tenantId: auth.tid,

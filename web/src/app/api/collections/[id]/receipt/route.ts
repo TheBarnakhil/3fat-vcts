@@ -38,8 +38,9 @@ export async function GET(
 		// download). Default streams the PDF inline.
 		const wantPresign = url.searchParams.get("presign") === "1";
 
-		// Fetch tenant-scoped collection + customer; cross-tenant access is
-		// blocked by RLS automatically.
+		// Fetch tenant-scoped collection + customer. RLS provides one layer of
+		// isolation; the explicit eq(table.tenantId, auth.tid) filters below
+		// are the second (so a misconfigured RLS policy can't ever leak).
 		const data = await withTenant(auth.tid, async (tx) => {
 			const [row] = await tx
 				.select({
@@ -47,15 +48,31 @@ export async function GET(
 					customer: customers,
 				})
 				.from(collectionsTable)
-				.innerJoin(customers, eq(customers.id, collectionsTable.customerId))
-				.where(eq(collectionsTable.id, id))
+				.innerJoin(
+					customers,
+					and(
+						eq(customers.id, collectionsTable.customerId),
+						eq(customers.tenantId, auth.tid),
+					),
+				)
+				.where(
+					and(
+						eq(collectionsTable.id, id),
+						eq(collectionsTable.tenantId, auth.tid),
+					),
+				)
 				.limit(1);
 			if (!row) return null;
 
 			const reversals = await tx
 				.select({ id: collectionReversals.id })
 				.from(collectionReversals)
-				.where(eq(collectionReversals.originalCollectionId, id))
+				.where(
+					and(
+						eq(collectionReversals.originalCollectionId, id),
+						eq(collectionReversals.tenantId, auth.tid),
+					),
+				)
 				.limit(1);
 
 			return { ...row, reversed: reversals.length > 0 };

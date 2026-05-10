@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 
@@ -76,7 +76,12 @@ export async function PATCH(
 					signatureUrl: collectionsTable.signatureUrl,
 				})
 				.from(collectionsTable)
-				.where(eq(collectionsTable.id, id))
+				.where(
+					and(
+						eq(collectionsTable.id, id),
+						eq(collectionsTable.tenantId, auth.tid),
+					),
+				)
 				.limit(1);
 			if (!existing) throw notFound("Collection not found");
 			if (auth.role === "agent" && existing.agentId !== auth.sub) {
@@ -98,7 +103,12 @@ export async function PATCH(
 			const [updated] = await tx
 				.update(collectionsTable)
 				.set(next)
-				.where(eq(collectionsTable.id, id))
+				.where(
+					and(
+						eq(collectionsTable.id, id),
+						eq(collectionsTable.tenantId, auth.tid),
+					),
+				)
 				.returning({
 					id: collectionsTable.id,
 					photoUrl: collectionsTable.photoUrl,

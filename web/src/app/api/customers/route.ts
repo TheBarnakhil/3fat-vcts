@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 
@@ -48,9 +48,12 @@ export async function GET() {
         })
         .from(customers)
         .where(
-          auth.role === "agent"
-            ? eq(customers.assignedAgentId, auth.sub)
-            : undefined,
+          and(
+            eq(customers.tenantId, auth.tid),
+            auth.role === "agent"
+              ? eq(customers.assignedAgentId, auth.sub)
+              : undefined,
+          ),
         )
         .orderBy(customers.name);
     });

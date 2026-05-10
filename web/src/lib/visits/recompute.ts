@@ -141,7 +141,8 @@ export async function recomputeForTenant(
 				lng: customers.lng,
 				geofenceRadiusM: customers.geofenceRadiusM,
 			})
-			.from(customers);
+			.from(customers)
+			.where(eq(customers.tenantId, tenantId));
 
 		if (customerRows.length === 0) return;
 
@@ -162,6 +163,7 @@ export async function recomputeForTenant(
 			.from(locationLogs)
 			.where(
 				and(
+					eq(locationLogs.tenantId, tenantId),
 					gte(locationLogs.loggedAt, windowStart),
 					eq(locationLogs.source, "tracker"),
 				),
@@ -189,7 +191,12 @@ export async function recomputeForTenant(
 				supervisorReview: collections.supervisorReview,
 			})
 			.from(collections)
-			.where(gte(collections.collectedAt, windowStart));
+			.where(
+				and(
+					eq(collections.tenantId, tenantId),
+					gte(collections.collectedAt, windowStart),
+				),
+			);
 
 		stats.collectionsScanned = recentCollections.length;
 		const collectionLinkToleranceMs = cfg.collectionToleranceMin * 60 * 1000;
@@ -231,7 +238,12 @@ export async function recomputeForTenant(
 							dwellSeconds: v.dwellSeconds,
 							source: "location_logs",
 						})
-						.where(eq(customerVisits.collectionId, matchingCollection.id))
+						.where(
+							and(
+								eq(customerVisits.collectionId, matchingCollection.id),
+								eq(customerVisits.tenantId, tenantId),
+							),
+						)
 						.returning({ id: customerVisits.id });
 					if (upgraded.length > 0) continue;
 				}
@@ -289,6 +301,7 @@ export async function recomputeForTenant(
 				.from(locationLogs)
 				.where(
 					and(
+						eq(locationLogs.tenantId, tenantId),
 						eq(locationLogs.agentId, c.agentId),
 						eq(locationLogs.source, "tracker"),
 						between(
@@ -317,6 +330,7 @@ export async function recomputeForTenant(
 				.from(supervisorReviews)
 				.where(
 					and(
+						eq(supervisorReviews.tenantId, tenantId),
 						eq(supervisorReviews.collectionId, c.id),
 						eq(supervisorReviews.reason, "unverified_visit"),
 					),
@@ -342,7 +356,12 @@ export async function recomputeForTenant(
 				await tx
 					.update(collections)
 					.set({ supervisorReview: true })
-					.where(eq(collections.id, c.id));
+					.where(
+						and(
+							eq(collections.id, c.id),
+							eq(collections.tenantId, tenantId),
+						),
+					);
 			}
 			stats.supervisorReviewsCreated += 1;
 		}

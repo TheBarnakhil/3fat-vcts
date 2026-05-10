@@ -57,7 +57,7 @@ export async function GET(req: NextRequest) {
 		const wantCollections = scope === "all" || scope === "collections";
 
 		const result = await withTenant(auth.tid, async (tx) => {
-			const customerConds = [];
+			const customerConds = [eq(customers.tenantId, auth.tid)];
 			if (since) customerConds.push(gt(customers.updatedAt, since));
 			if (auth.role === "agent")
 				customerConds.push(eq(customers.assignedAgentId, auth.sub));
@@ -90,7 +90,7 @@ export async function GET(req: NextRequest) {
 			// Agents are restricted to their own collections; everyone else
 			// (manager / super_admin / auditor) gets the full tenant slice
 			// because they manage drift across the team.
-			const collectionsConds = [];
+			const collectionsConds = [eq(collections.tenantId, auth.tid)];
 			if (since) collectionsConds.push(gt(collections.createdAt, since));
 			if (auth.role === "agent")
 				collectionsConds.push(eq(collections.agentId, auth.sub));
@@ -119,11 +119,7 @@ export async function GET(req: NextRequest) {
 							signatureUrl: collections.signatureUrl,
 						})
 						.from(collections)
-						.where(
-							collectionsConds.length
-								? and(...collectionsConds)
-								: undefined,
-						)
+						.where(and(...collectionsConds))
 						.orderBy(asc(collections.createdAt))
 						.limit(PAGE_SIZE)
 				: [];

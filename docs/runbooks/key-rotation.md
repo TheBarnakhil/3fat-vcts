@@ -152,8 +152,55 @@ Cloudflare R2 supports rotating access keys without downtime:
 
 ## Verification checklist after any rotation
 
-- [ ] `pnpm verify:isolation` against the rotated environment - 46/46 pass
+- [ ] `pnpm verify:isolation` against the rotated environment - 55/55 pass
 - [ ] `pnpm verify:phase1` (audit chain integrity) - both tenants `ok`
 - [ ] Manual login test in the web admin and the Android app
 - [ ] Spot-check a presigned receipt URL still resolves
 - [ ] Vercel function logs free of `unauthorized` floods for ~5 minutes
+
+## Bootstrap checklist (new prod database)
+
+The May 2026 cross-tenant outage came from running `pnpm db:push` once
+during initial provisioning and *not* `pnpm db:rls`. Without RLS, every
+tenant-scoped table sits at `relrowsecurity=false policies=0` and every
+cross-tenant query silently returns all rows. Postgres remembers
+`FORCE ROW LEVEL SECURITY` (it's sticky across DISABLE) but FORCE alone
+does nothing without ENABLE.
+
+Whenever you spin up a fresh prod / staging Neon branch:
+
+1. `pnpm db:push` - applies the schema.
+2. `pnpm db:rls` - **mandatory**, never skip. The script's
+   `=== RLS state BEFORE ===` block tells you instantly if a table is
+   missing RLS or a policy. After the run, every tenant-scoped table
+   must show `rls=true forced=true policies=1` and `vcts_app role`
+   must show `bypassrls=false`.
+3. `pnpm db:seed` - if you want fixture data (only for dev / staging).
+4. `pnpm verify:isolation` against the new environment - must pass
+   55/55.
+
+Do **not** rely on Drizzle migrations or `db:push` to manage RLS;
+Drizzle has no concept of policies. RLS is owned exclusively by
+`apply-rls.ts`, which is idempotent and safe to re-run on every deploy.
+
+## Schema-touching deploy ordering
+
+Track B (May 2026) hit a self-inflicted outage from deploying code that
+referenced `refresh_tokens.device_fingerprint` *before* the column
+existed in prod. Login routes then 500'd until the column was added.
+
+Rule: any track that adds or alters a column ships in **two commits**:
+
+1. **Migration commit** - schema change only (`pnpm db:push` against
+   prod immediately after merge, before the second commit's deploy
+   reaches the lambda). Verify the column exists with the diagnostic
+   path of choice (`pnpm db:rls` is fine, it'll print the new column
+   in its dump; `psql` works too).
+2. **Code commit** - new logic that uses the column.
+
+For platforms where the user's local network blocks the Neon WebSocket
+or DNS, fall back to: ask Neon support to apply the migration via the
+Neon console SQL editor, switch to a phone hotspot, or write a one-shot
+migration endpoint protected by `CRON_SECRET` (delete the endpoint as
+its own commit immediately after the migration runs - never leave it in
+the deployed app).

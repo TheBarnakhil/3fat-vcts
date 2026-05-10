@@ -42,6 +42,14 @@ export async function GET(req: NextRequest) {
 		const endUtc = new Date(`${parsed.data.to}T23:59:59.999Z`);
 
 		const data = await withTenant(auth.tid, async (tx) => {
+			// RLS scopes these queries automatically, but include the explicit
+			// tenant predicate as defense in depth so an aggregate can never
+			// silently absorb cross-tenant rows from a misconfigured policy.
+			const tenantInWindow = and(
+				eq(collections.tenantId, auth.tid),
+				between(collections.collectedAt, startUtc, endUtc),
+			);
+
 			const totals = await tx
 				.select({
 					count: sql<number>`count(*)::int`,
@@ -49,7 +57,7 @@ export async function GET(req: NextRequest) {
 					supervisorReview: sql<number>`sum(case when ${collections.supervisorReview} then 1 else 0 end)::int`,
 				})
 				.from(collections)
-				.where(between(collections.collectedAt, startUtc, endUtc));
+				.where(tenantInWindow);
 
 			const byDay = await tx
 				.select({
@@ -58,7 +66,7 @@ export async function GET(req: NextRequest) {
 					amount: sql<number>`coalesce(sum(${collections.amount}), 0)::float8`,
 				})
 				.from(collections)
-				.where(between(collections.collectedAt, startUtc, endUtc))
+				.where(tenantInWindow)
 				.groupBy(sql`to_char(${collections.collectedAt} at time zone 'UTC', 'YYYY-MM-DD')`)
 				.orderBy(
 					asc(sql`to_char(${collections.collectedAt} at time zone 'UTC', 'YYYY-MM-DD')`),
@@ -71,7 +79,7 @@ export async function GET(req: NextRequest) {
 					amount: sql<number>`coalesce(sum(${collections.amount}), 0)::float8`,
 				})
 				.from(collections)
-				.where(between(collections.collectedAt, startUtc, endUtc))
+				.where(tenantInWindow)
 				.groupBy(collections.agentId);
 
 			const byMode = await tx
@@ -81,7 +89,7 @@ export async function GET(req: NextRequest) {
 					amount: sql<number>`coalesce(sum(${collections.amount}), 0)::float8`,
 				})
 				.from(collections)
-				.where(between(collections.collectedAt, startUtc, endUtc))
+				.where(tenantInWindow)
 				.groupBy(collections.paymentMode);
 
 			return { totals: totals[0], byDay, byAgentRaw, byMode };

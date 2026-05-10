@@ -1,4 +1,4 @@
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import {
@@ -108,7 +108,12 @@ export async function createCollectionInTx(
 	const existing = await tx
 		.select()
 		.from(collectionsTable)
-		.where(eq(collectionsTable.clientUuid, data.clientUuid))
+		.where(
+			and(
+				eq(collectionsTable.clientUuid, data.clientUuid),
+				eq(collectionsTable.tenantId, auth.tid),
+			),
+		)
 		.limit(1);
 	if (existing[0]) {
 		return {
@@ -122,11 +127,16 @@ export async function createCollectionInTx(
 		};
 	}
 
-	// --- Customer (RLS-filtered to the tenant) -----------------------------
+	// --- Customer (RLS + explicit tenantId filter as defense in depth) -----
 	const [cust] = await tx
 		.select()
 		.from(customers)
-		.where(eq(customers.id, data.customerId))
+		.where(
+			and(
+				eq(customers.id, data.customerId),
+				eq(customers.tenantId, auth.tid),
+			),
+		)
 		.limit(1);
 	if (!cust) throw notFound("Customer not found in this tenant");
 
@@ -226,7 +236,12 @@ export async function createCollectionInTx(
 			outstandingBalance: sql`${customers.outstandingBalance} - ${data.amount}`,
 			updatedAt: new Date(),
 		})
-		.where(eq(customers.id, data.customerId));
+		.where(
+			and(
+				eq(customers.id, data.customerId),
+				eq(customers.tenantId, auth.tid),
+			),
+		);
 
 	// A confirmed collection is a customer visit even when the periodic
 	// tracker has not emitted enough fixes to derive sustained dwell yet.

@@ -93,6 +93,7 @@ export async function GET(
 				.from(locationLogs)
 				.where(
 					and(
+						eq(locationLogs.tenantId, auth.tid),
 						eq(locationLogs.agentId, agentId),
 						between(locationLogs.loggedAt, startUtc, endUtc),
 					),
@@ -105,6 +106,7 @@ export async function GET(
 				.from(customerVisits)
 				.where(
 					and(
+						eq(customerVisits.tenantId, auth.tid),
 						eq(customerVisits.agentId, agentId),
 						between(customerVisits.startedAt, startUtc, endUtc),
 					),
@@ -124,6 +126,7 @@ export async function GET(
 				.from(collectionsTable)
 				.where(
 					and(
+						eq(collectionsTable.tenantId, auth.tid),
 						eq(collectionsTable.agentId, agentId),
 						between(collectionsTable.collectedAt, startUtc, endUtc),
 					),

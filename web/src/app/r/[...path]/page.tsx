@@ -78,14 +78,30 @@ async function loadReceipt(receiptNo: string) {
 				customerAddress: customers.address,
 			})
 			.from(collectionsTable)
-			.innerJoin(customers, eq(customers.id, collectionsTable.customerId))
-			.where(eq(collectionsTable.receiptNo, receiptNo))
+			.innerJoin(
+				customers,
+				and(
+					eq(customers.id, collectionsTable.customerId),
+					eq(customers.tenantId, tenant.id),
+				),
+			)
+			.where(
+				and(
+					eq(collectionsTable.receiptNo, receiptNo),
+					eq(collectionsTable.tenantId, tenant.id),
+				),
+			)
 			.limit(1);
 		if (!row) return null;
 		const reversals = await tx
 			.select({ id: collectionReversals.id })
 			.from(collectionReversals)
-			.where(eq(collectionReversals.originalCollectionId, row.collection.id));
+			.where(
+				and(
+					eq(collectionReversals.originalCollectionId, row.collection.id),
+					eq(collectionReversals.tenantId, tenant.id),
+				),
+			);
 		return { ...row, reversed: reversals.length > 0 };
 	});
 	if (!data) return null;

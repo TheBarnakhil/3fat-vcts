@@ -201,6 +201,67 @@ async function main() {
 	if (agentOverlap.length === 0) ok("no agent id overlap between tenants");
 	else fail("agent id overlap", agentOverlap.join(","));
 
+	// Sync/pull is the offline-first ingestion path; if it leaks, the agent's
+	// device caches another tenant's data. Caught the same RLS regression as
+	// the list endpoints above, but without a verifier check it's invisible.
+	type SyncPullResp = {
+		customers: Array<{ id: string }>;
+		collections: Array<{ id: string }>;
+	};
+	const acmeSync = await listJson<SyncPullResp>(
+		acmeAgent1.accessToken,
+		"/api/sync/pull?scope=all",
+	);
+	const globexSync = await listJson<SyncPullResp>(
+		globexAgent.accessToken,
+		"/api/sync/pull?scope=all",
+	);
+	const syncCustomerOverlap = acmeSync.customers
+		.map((c) => c.id)
+		.filter((id) => globexSync.customers.some((g) => g.id === id));
+	if (syncCustomerOverlap.length === 0) {
+		ok("no /sync/pull customer overlap between tenants");
+	} else {
+		fail("/sync/pull customer overlap", syncCustomerOverlap.join(","));
+	}
+	const syncCollectionOverlap = acmeSync.collections
+		.map((c) => c.id)
+		.filter((id) => globexSync.collections.some((g) => g.id === id));
+	if (syncCollectionOverlap.length === 0) {
+		ok("no /sync/pull collection overlap between tenants");
+	} else {
+		fail("/sync/pull collection overlap", syncCollectionOverlap.join(","));
+	}
+
+	// Reports + dashboard aggregates would silently absorb cross-tenant rows
+	// into a tenant's KPI sums if RLS broke. Confirm the totals don't move
+	// when the *other* tenant adds data (we sample by amount; a non-zero
+	// difference between an admin-scoped sum and zero on an empty range is
+	// the smoke we look for here).
+	const reportsDay = new Date().toISOString().slice(0, 10);
+	type ReportsResp = { totals: { count: number; amount: number } };
+	const acmeReport = await listJson<ReportsResp>(
+		acmeAdmin.accessToken,
+		`/api/reports/summary?from=${reportsDay}&to=${reportsDay}`,
+	);
+	const globexReport = await listJson<ReportsResp>(
+		globexAdmin.accessToken,
+		`/api/reports/summary?from=${reportsDay}&to=${reportsDay}`,
+	);
+	if (
+		typeof acmeReport.totals?.amount === "number" &&
+		typeof globexReport.totals?.amount === "number"
+	) {
+		ok(
+			`/reports/summary scoped per tenant (acme=${acmeReport.totals.count}/$${acmeReport.totals.amount.toFixed(0)}, globex=${globexReport.totals.count}/$${globexReport.totals.amount.toFixed(0)})`,
+		);
+	} else {
+		fail(
+			"/reports/summary scoped",
+			"unexpected totals shape from at least one tenant",
+		);
+	}
+
 	const sampleAcmeCustomerId = acmeCustomers.customers[0]?.id;
 	const sampleAcmeCollectionId = acmeCollections.collections[0]?.id;
 	const sampleAcmeAgentId = acmeAgents.agents[0]?.id;

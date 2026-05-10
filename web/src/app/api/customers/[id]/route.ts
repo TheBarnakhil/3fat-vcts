@@ -37,9 +37,13 @@ export async function GET(
         .select()
         .from(customers)
         .where(
-          auth.role === "agent"
-            ? and(eq(customers.id, id), eq(customers.assignedAgentId, auth.sub))
-            : eq(customers.id, id),
+          and(
+            eq(customers.id, id),
+            eq(customers.tenantId, auth.tid),
+            auth.role === "agent"
+              ? eq(customers.assignedAgentId, auth.sub)
+              : undefined,
+          ),
         )
         .limit(1);
       return rows[0];
@@ -77,14 +81,14 @@ export async function PATCH(
       const existing = await tx
         .select()
         .from(customers)
-        .where(eq(customers.id, id))
+        .where(and(eq(customers.id, id), eq(customers.tenantId, auth.tid)))
         .limit(1);
       if (!existing[0]) throw notFound("Customer not found");
 
       const [row] = await tx
         .update(customers)
         .set({ ...sanitized, updatedAt: new Date() })
-        .where(eq(customers.id, id))
+        .where(and(eq(customers.id, id), eq(customers.tenantId, auth.tid)))
         .returning();
 
       await appendAudit(tx, {
@@ -125,11 +129,13 @@ export async function DELETE(
       const existing = await tx
         .select()
         .from(customers)
-        .where(eq(customers.id, id))
+        .where(and(eq(customers.id, id), eq(customers.tenantId, auth.tid)))
         .limit(1);
       if (!existing[0]) throw notFound("Customer not found");
 
-      await tx.delete(customers).where(eq(customers.id, id));
+      await tx
+        .delete(customers)
+        .where(and(eq(customers.id, id), eq(customers.tenantId, auth.tid)));
 
       await appendAudit(tx, {
         tenantId: auth.tid,
