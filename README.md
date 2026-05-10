@@ -33,6 +33,7 @@ For Phase 11 platform/self-serve onboarding work, also run:
 ```bash
 pnpm db:seed:platform
 pnpm verify:platform
+pnpm test:automated -- --build
 ```
 
 Then verify the user-facing surfaces manually:
@@ -45,6 +46,17 @@ Then verify the user-facing surfaces manually:
 Keep these steps complete before the final "make the app live" phase, where the
 signed Android build, Play internal testing, API-key SHA-1 restriction, and final
 Neon backup are handled.
+
+Full manual regression guidance lives in `docs/testing/manual-test-plan.md`.
+
+Useful automated test commands from `web/`:
+
+```bash
+pnpm test:unit          # pure helper assertions only
+pnpm test:automated     # unit assertions + TypeScript + ESLint
+pnpm test:automated -- --build
+pnpm test:release       # unit + TypeScript + ESLint + build + deployed HTTP verifiers
+```
 
 ## Local dev (web)
 

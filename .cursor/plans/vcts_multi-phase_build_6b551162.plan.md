@@ -572,6 +572,16 @@ Every other tenant-scoped table identical.
   - `cd web && pnpm db:push && pnpm db:rls && pnpm verify:isolation`.
   - For Phase 11 platform/signup work: `pnpm db:seed:platform && pnpm verify:platform`.
   - Manually verify `/platform/login`, `/platform` tenant list/create/suspend/reactivate, and `/signup` + `/signup/verify` once `RESEND_API_KEY` + `SIGNUP_FROM_EMAIL` are configured.
+- **Manual regression checklist:** `docs/testing/manual-test-plan.md` now covers web tenant flows, tenant settings, platform console, signup, public receipts, live map, Android collection/offline/photo/signature, and final release readiness.
+- **Automated regression commands:** from `web/`, use `pnpm test:unit` for pure helper assertions, `pnpm test:automated` for unit + TypeScript + lint, `pnpm test:automated -- --build` before merging, and `VCTS_BASE_URL=https://project-jcsyq.vercel.app pnpm test:release` for the final release rehearsal (unit + static + build + HTTP verifiers).
+- **Remaining before go-live:**
+  - Configure production `RESEND_API_KEY` + `SIGNUP_FROM_EMAIL`, then verify `/signup` uses real email delivery.
+  - Run the complete manual checklist in `docs/testing/manual-test-plan.md` on the production deployment and Android internal-test build.
+  - Recompute Android TLS pins if the Vercel certificate chain has changed since 2026-05-10.
+  - Build signed Android APK/AAB using `VCTS_RELEASE_*` env vars and local `android/app/google-services.json`.
+  - Add release keystore SHA-1 + package `com.threefat.vcts` to the restricted Android Google API key in GCP.
+  - Upload to Play Console internal testing and confirm install, Crashlytics, and Analytics.
+  - Take a Neon backup immediately before public rollout.
 - Build the signed Android release APK/AAB from a Gradle-enabled machine with `android/app/google-services.json` present and `VCTS_RELEASE_*` env vars set.
 - Add the release keystore SHA-1 + package `com.threefat.vcts` to the restricted Android Google API key in GCP.
 - Upload to Play Console internal testing, verify install from Play, and confirm Crashlytics/Analytics sessions appear.
