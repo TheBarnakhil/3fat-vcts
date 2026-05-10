@@ -356,6 +356,16 @@ async function main() {
 			).status,
 			404,
 		);
+		expectStatus(
+			"GET /api/collections/{acme}/receipt-assets as globex admin",
+			(
+				await authedFetch(
+					globexAdmin.accessToken,
+					`/api/collections/${sampleAcmeCollectionId}/receipt-assets`,
+				)
+			).status,
+			404,
+		);
 	}
 
 	if (sampleAcmeAgentId) {
@@ -444,6 +454,16 @@ async function main() {
 							photoUrl: "t/acme/photos/should-never-set.jpg",
 						}),
 					},
+				)
+			).status,
+			403,
+		);
+		expectStatus(
+			"GET /api/collections/{otherAgent}/receipt-assets as acme agent1",
+			(
+				await authedFetch(
+					acmeAgent1.accessToken,
+					`/api/collections/${otherAgentCollection.id}/receipt-assets`,
 				)
 			).status,
 			403,
@@ -626,6 +646,13 @@ async function main() {
 	expectStatus(
 		"GET /api/dashboard/summary (no token)",
 		(await fetch(`${BASE}/api/dashboard/summary`)).status,
+		401,
+	);
+	expectStatus(
+		"GET /api/maps/static (no token)",
+		(
+			await fetch(`${BASE}/api/maps/static?lat=12.97&lng=77.59`)
+		).status,
 		401,
 	);
 	expectStatus(

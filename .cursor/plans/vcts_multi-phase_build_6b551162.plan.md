@@ -531,11 +531,17 @@ Every other tenant-scoped table identical.
 - **Android:** `AppPreferences.getOrCreateInstallId()` lazily mints a UUID v4 on first read and persists it across logouts. `LoginRequest` and `RefreshRequest` DTOs gained an optional `installId` field; `AuthRepository.login()` and `TokenRefreshAuthenticator` both pull it from DataStore on every call. `clearSessionTraces()` keeps the install UUID intact (it identifies the *device*, not the user); only uninstall / Clear Data resets it.
 - **Verifier:** `verify-isolation.ts` Section H exercises the matrix - login(installId A) + refresh(installId A) = 200, login(installId A) + refresh(installId B) = 401, login() + refresh() = 200 (legacy compat). Pre-deploy baseline against prod: 51/52 passing (the one failure is the bound-mismatch case, which is exactly what we want to start enforcing).
 
-### Track C - Carry-over feature gaps [pending]
+### Track C - Carry-over feature gaps
 
-- C1. Android on-device PDF parity (currently stuck on the bare Phase 5 layout). Embed photo / signature / QR / branding / map exactly like the web template, falling back to text when attachments are still pending upload.
-- C2. Live SSE map: `/api/stream/agent-locations` channel and `/map` page with live agent pins powered by the Phase 7 location_logs.
-- C3. Customer-ledger CSV/PDF export on the customer detail page.
+- C1 [completed]. Android on-device PDF rewritten to match the web template:
+  - A4 portrait with the same accent header band (logo + tenant block + receipt no + UTC date), divider, two-column "Received from / Collected by" block, amount band (light bg + accent amount + mode + ref), GPS / cheque-date / remarks meta rows, three-slot attachments band (PHOTO + SIGNATURE + GPS PIN with "Not captured" placeholders), QR-code verify-link in the bottom-right, and the disclaimer + "VCTS" footer. Reversed receipts get a desaturated 60pt -25deg watermark.
+  - New `data/receipt/ReceiptAssetsLoader.kt` resolves every binary input in parallel: prefers local files for photo + signature (recently captured), falls back to presigned R2 GETs the server hands out (re-renders post-drainer when the local cache has been cleared), proxies the static-map thumbnail through the new `/api/maps/static` endpoint so the Maps API key never ships in the APK, and renders the QR code via ZXing.
+  - New web endpoint `GET /api/collections/{id}/receipt-assets` bundles tenant branding (legalName / address / gstin / phone), agent name + agentCode, the reversed flag, the public verify URL, and presigned GET URLs for photo / signature / logo into a single round-trip the device makes once per receipt-no flip.
+  - New web endpoint `GET /api/maps/static` proxies Google Static Maps. Auth-protected, throttled via the existing `geocode` rate-limit bucket (per tenant + user), 24h public cache (the same lat/lng/zoom always renders the same tile).
+  - `verify-isolation` Section C / D / F extended with three new checks (`receipt-assets` cross-tenant 404, same-tenant cross-agent 403, `/api/maps/static` anonymous 401) so the new surface stays covered by the verifier.
+  - Fallback path: when the receipt-assets call is unreachable (offline) the renderer still produces a usable PDF using slug-derived branding, the local agent name from the session, and local files for any captured attachments.
+- C2 [pending]. Live SSE map: `/api/stream/agent-locations` channel and `/map` page with live agent pins powered by the Phase 7 location_logs.
+- C3 [pending]. Customer-ledger CSV/PDF export on the customer detail page.
 
 ### Track D - Build & release prep [pending]
 

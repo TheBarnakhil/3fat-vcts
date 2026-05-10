@@ -4,7 +4,11 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.threefat.vcts.BuildConfig
+import com.threefat.vcts.data.receipt.ReceiptAssetsLoader
+import com.threefat.vcts.data.receipt.ReceiptHeaderInfo
 import com.threefat.vcts.data.receipt.ReceiptPdfRenderer
+import com.threefat.vcts.data.remote.dto.ReceiptAgentDto
+import com.threefat.vcts.data.remote.dto.ReceiptTenantDto
 import com.threefat.vcts.data.repository.CollectionsRepository
 import com.threefat.vcts.data.repository.CustomersRepository
 import com.threefat.vcts.data.session.SessionStore
@@ -44,6 +48,7 @@ class ReceiptPreviewViewModel @Inject constructor(
     private val customersRepository: CustomersRepository,
     private val sessionStore: SessionStore,
     private val pdfRenderer: ReceiptPdfRenderer,
+    private val assetsLoader: ReceiptAssetsLoader,
 ) : ViewModel() {
 
     private val collectionId: String = checkNotNull(savedStateHandle[Routes.Receipt.ArgId])
@@ -87,10 +92,45 @@ class ReceiptPreviewViewModel @Inject constructor(
                     ) {
                         lastRenderedReceiptNo = collection.receiptNo
                         _state.update { it.copy(isRenderingPdf = true) }
+
+                        // Phase 10 / Track C1 - mirror the web template:
+                        // pull branding + agent meta + presigned attachment
+                        // URLs from the server, then resolve every embed
+                        // (logo / photo / signature / map / QR) before
+                        // handing the bytes to the renderer.
+                        //
+                        // Each step is best-effort: if the metadata call
+                        // fails we fall back to slug-derived branding +
+                        // session display name; if any single image fetch
+                        // fails the renderer paints a "Not captured"
+                        // placeholder for that slot.
+                        val metadata = assetsLoader.fetchMetadata(collection.id)
+                        val verifyUrl = metadata?.verifyUrl ?: deriveVerifyUrl(
+                            tenantSlug = tenantSlug,
+                            receiptNo = collection.receiptNo,
+                        )
+                        val embeds = assetsLoader.loadEmbeds(
+                            collection = collection,
+                            metadata = metadata,
+                            verifyUrl = verifyUrl,
+                        )
+
+                        val sessionName = sessionStore.publicInfo.first()?.displayName
+                        val header = ReceiptHeaderInfo(
+                            tenant = metadata?.tenant ?: ReceiptTenantDto(
+                                legalName = tenantDisplay(tenantSlug),
+                            ),
+                            agent = metadata?.agent ?: ReceiptAgentDto(name = sessionName),
+                        )
+
                         val result = pdfRenderer.render(
                             collection = collection,
                             customer = customer,
                             tenantSlug = tenantSlug,
+                            header = header,
+                            embeds = embeds,
+                            verifyUrl = verifyUrl,
+                            reversed = metadata?.reversed ?: false,
                         )
                         _state.update {
                             it.copy(
@@ -103,6 +143,16 @@ class ReceiptPreviewViewModel @Inject constructor(
                 }
         }
     }
+
+    private fun deriveVerifyUrl(tenantSlug: String, receiptNo: String): String {
+        val path = receiptNo.split('/').joinToString("/") {
+            java.net.URLEncoder.encode(it, "UTF-8")
+        }
+        return "${BuildConfig.API_BASE_URL.trimEnd('/')}/r/$path"
+    }
+
+    private fun tenantDisplay(slug: String): String =
+        slug.split('-', '_').joinToString(" ") { it.replaceFirstChar(Char::titlecase) }
 
     /** Called from the queue UI / banner to retry stuck rows manually. */
     fun retrySync() {

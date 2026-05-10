@@ -7,6 +7,7 @@ import com.threefat.vcts.data.remote.AuthApi
 import com.threefat.vcts.data.remote.CollectionsApi
 import com.threefat.vcts.data.remote.CustomersApi
 import com.threefat.vcts.data.remote.LocationLogsApi
+import com.threefat.vcts.data.remote.ReceiptAssetsApi
 import com.threefat.vcts.data.remote.SyncApi
 import com.threefat.vcts.data.remote.interceptor.AuthInterceptor
 import com.threefat.vcts.data.remote.interceptor.TokenRefreshAuthenticator
@@ -148,4 +149,9 @@ object NetworkModule {
     @Singleton
     fun provideAttachmentsApi(retrofit: Retrofit): AttachmentsApi =
         retrofit.create(AttachmentsApi::class.java)
+
+    @Provides
+    @Singleton
+    fun provideReceiptAssetsApi(retrofit: Retrofit): ReceiptAssetsApi =
+        retrofit.create(ReceiptAssetsApi::class.java)
 }
