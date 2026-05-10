@@ -20,6 +20,9 @@ export function unauthorized(message = "Authentication required"): HttpError {
 export function forbidden(message = "Forbidden"): HttpError {
 	return new HttpError(403, "forbidden", message);
 }
+export function conflict(message = "Conflict"): HttpError {
+	return new HttpError(409, "conflict", message);
+}
 export function notFound(message = "Not found"): HttpError {
 	return new HttpError(404, "not_found", message);
 }

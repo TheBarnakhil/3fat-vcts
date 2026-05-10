@@ -87,6 +87,26 @@ export const users = pgTable(
 );
 
 // ---------------------------------------------------------------------------
+// platform_users - operators of the VCTS platform itself. These users are NOT
+// tenant users and must never be treated as tenant `super_admin`s.
+// ---------------------------------------------------------------------------
+
+export const platformUsers = pgTable(
+	"platform_users",
+	{
+		id: uuid("id").defaultRandom().primaryKey(),
+		email: text("email").notNull(),
+		passwordHash: text("password_hash").notNull(),
+		name: text("name").notNull(),
+		isActive: boolean("is_active").notNull().default(true),
+		lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
+		createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+		updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+	},
+	(t) => [uniqueIndex("platform_users_email_uq").on(t.email)],
+);
+
+// ---------------------------------------------------------------------------
 // customers - outstanding balance is a denormalised running total maintained
 // by the collections write path (Phase 3). lat/lng is the registered location
 // used for server-side geo-fencing.

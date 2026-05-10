@@ -580,11 +580,16 @@ Every other tenant-scoped table identical.
 
 **Goal:** Stop relying on SQL seeds to create tenants. (Build this only after Phase 10 ships.)
 
-- New `platform_admin` role, stored outside the tenant model (rows in `tenants` table won't help - we'll have a separate `platform_users` table)
-- Hidden `/platform` route, protected by different JWT audience; lists tenants, create/suspend/delete
-- Optional: self-serve signup flow at `/signup` - email verification, creates new tenant + super-admin user in one transaction, seeds default settings
-- Tenant-level settings editor (geofence defaults, sync frequency, branding upload to R2 at `t/{slug}/brand/logo.png`)
-- Usage metrics per tenant (collections/month, agents active, storage used) for future billing hook
+- 11A [completed]. Platform admin foundation.
+  - New `platform_users` table stores operators outside the tenant model. Platform users are not tenant `super_admin`s and do not carry `tenant_id`.
+  - Separate JWT audience (`vcts-platform`) and cookie (`vcts_platform_access`) via `signPlatformAccessToken` / `requirePlatformAuth`. Tenant tokens cannot call platform APIs because `requirePlatformAuth` verifies the platform audience only.
+  - `POST /api/platform/auth/login`, `POST /api/platform/auth/logout`, `GET /api/platform/me`.
+  - `GET /api/platform/tenants` lists all tenants with user/customer/collection counts using `withoutTenant` behind platform auth. `POST /api/platform/tenants` provisions a tenant + first tenant `super_admin` in one transaction. `PATCH /api/platform/tenants/{id}` toggles `isActive` / edits name for suspend/reactivate workflows.
+  - Hidden `/platform/login` and `/platform` console: operator login, tenant KPI cards, tenant table, create-tenant dialog, suspend/reactivate action.
+  - New `pnpm db:seed:platform` seeds/refreshes `platform@3fat.test / Passw0rd!` (overridable by `PLATFORM_ADMIN_*` env vars). New `pnpm verify:platform` checks platform auth boundaries and tenant listing.
+- 11B [pending]. Self-serve signup flow at `/signup` - email verification, creates new tenant + super-admin user in one transaction, seeds default settings.
+- 11C [pending]. Tenant-level settings editor (geofence defaults, sync frequency, branding upload to R2 at `t/{slug}/brand/logo.png`).
+- 11D [pending]. Usage metrics per tenant (collections/month, agents active, storage used) for future billing hook.
 
 ---
 

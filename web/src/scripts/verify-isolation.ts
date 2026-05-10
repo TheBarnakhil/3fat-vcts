@@ -20,6 +20,7 @@
  *   pnpm tsx src/scripts/verify-isolation.ts https://my-deploy.vercel.app
  *   VCTS_BASE_URL=https://... pnpm tsx src/scripts/verify-isolation.ts
  */
+export {};
 
 const BASE = (
 	process.argv[2] ||

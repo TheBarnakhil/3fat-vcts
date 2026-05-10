@@ -5,6 +5,7 @@ import { env } from "../env";
 const ALG = "RS256";
 const ISSUER = "vcts";
 const ACCESS_AUD = "vcts-api";
+const PLATFORM_ACCESS_AUD = "vcts-platform";
 const REFRESH_AUD = "vcts-refresh";
 
 export type AuthClaims = {
@@ -25,6 +26,17 @@ export type AuthClaims = {
 	 * and the refresh flow enforces it against the stored value.
 	 */
 	dfp?: string;
+};
+
+export type PlatformClaims = {
+	/** platform user id */
+	sub: string;
+	/** platform role - reserved for future finer-grained permissions */
+	role: "platform_admin";
+	/** operator display name */
+	name: string;
+	/** operator email */
+	email: string;
 };
 
 let privateKeyPromise: Promise<CryptoKey> | null = null;
@@ -65,6 +77,29 @@ export async function verifyAccessToken(token: string): Promise<AuthClaims> {
 	return payload as unknown as AuthClaims;
 }
 
+export async function signPlatformAccessToken(
+	claims: PlatformClaims,
+): Promise<string> {
+	return new SignJWT({ ...claims })
+		.setProtectedHeader({ alg: ALG })
+		.setSubject(claims.sub)
+		.setIssuer(ISSUER)
+		.setAudience(PLATFORM_ACCESS_AUD)
+		.setIssuedAt()
+		.setExpirationTime(env.JWT_ACCESS_EXPIRES_IN)
+		.sign(await privateKey());
+}
+
+export async function verifyPlatformAccessToken(
+	token: string,
+): Promise<PlatformClaims> {
+	const { payload } = await jwtVerify(token, await publicKey(), {
+		issuer: ISSUER,
+		audience: PLATFORM_ACCESS_AUD,
+	});
+	return payload as unknown as PlatformClaims;
+}
+
 /**
  * Refresh tokens are opaque random strings (not JWTs). We sign a JWT for the
  * access token because it carries claims the client reads; refresh tokens are
@@ -82,4 +117,4 @@ export function hashRefreshToken(token: string): string {
 	return createHash("sha256").update(token).digest("hex");
 }
 
-export { REFRESH_AUD };
+export { REFRESH_AUD, PLATFORM_ACCESS_AUD };

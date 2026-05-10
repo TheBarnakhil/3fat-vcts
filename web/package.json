@@ -12,12 +12,14 @@
     "db:studio": "drizzle-kit studio",
     "db:rls": "tsx src/scripts/apply-rls.ts",
     "db:seed": "tsx src/scripts/seed.ts",
+    "db:seed:platform": "tsx src/scripts/seed-platform.ts",
     "db:seed:phase3": "tsx src/scripts/seed-phase3.ts",
     "verify:phase1": "tsx src/scripts/verify-phase1.ts",
     "verify:phase3": "tsx src/scripts/verify-phase3.ts",
     "verify:phase6": "tsx src/scripts/verify-phase6.ts",
     "verify:phase7": "tsx src/scripts/verify-phase7.ts",
-    "verify:isolation": "tsx src/scripts/verify-isolation.ts"
+    "verify:isolation": "tsx src/scripts/verify-isolation.ts",
+    "verify:platform": "tsx src/scripts/verify-platform.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1037.0",
