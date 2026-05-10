@@ -11,7 +11,8 @@ import {
 	createCollectionInTx,
 	type CollectionCreateInput,
 } from "@/lib/collections/create";
-import { badRequest, HttpError, toResponse } from "@/lib/errors";
+import { badRequest, HttpError, tooMany, toResponse } from "@/lib/errors";
+import { limitSyncPush, rateLimitHeaders } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 
@@ -72,13 +73,29 @@ export async function POST(req: NextRequest) {
 		// Sync push is exclusively a field-agent path. Managers don't queue.
 		requireRole(auth, "agent");
 
+		const agentId = auth.sub;
+
+		// Throttle the request frequency, not the per-record rate. The
+		// `MAX_BATCH` cap above already constrains how many collections one
+		// request can write, so 60 requests/min is plenty for a draining
+		// queue while still cutting off a runaway client.
+		const rl = await limitSyncPush(auth.tid, agentId);
+		const rlHeaders = rateLimitHeaders(rl);
+		if (!rl.success) {
+			const err = tooMany(
+				"Too many sync requests. The device will retry automatically.",
+			);
+			return NextResponse.json(
+				{ error: { code: err.code, message: err.message } },
+				{ status: err.status, headers: rlHeaders },
+			);
+		}
+
 		const parsed = PushBody.safeParse(await req.json().catch(() => ({})));
 		if (!parsed.success) {
 			throw badRequest("Invalid sync push body", parsed.error.flatten());
 		}
 		const { records } = parsed.data;
-
-		const agentId = auth.sub;
 
 		// Look up agent_code once - shared across all records in the batch.
 		const [agentRow] = await withoutTenant(async (tx) =>
@@ -115,10 +132,13 @@ export async function POST(req: NextRequest) {
 
 		const counts = summarise(outcomes);
 
-		return NextResponse.json({
-			outcomes,
-			counts,
-		});
+		return NextResponse.json(
+			{
+				outcomes,
+				counts,
+			},
+			{ headers: rlHeaders },
+		);
 	} catch (err) {
 		return toResponse(err);
 	}

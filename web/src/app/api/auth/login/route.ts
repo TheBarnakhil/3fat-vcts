@@ -11,14 +11,26 @@ import {
 } from "@/lib/auth/jwt";
 import { verifyPassword } from "@/lib/auth/password";
 import { env } from "@/lib/env";
-import { badRequest, toResponse, unauthorized } from "@/lib/errors";
+import {
+	badRequest,
+	toResponse,
+	tooMany,
+	unauthorized,
+} from "@/lib/errors";
+import {
+	limitLoginEmail,
+	limitLoginIp,
+	rateLimitHeaders,
+} from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 
 const Body = z.object({
-	email: z.string().email().toLowerCase(),
-	password: z.string().min(1),
-	deviceId: z.string().optional(),
+	email: z.string().email().max(254).toLowerCase(),
+	// Cap password length so a malicious caller can't DoS the server by
+	// posting megabytes of bytes for bcrypt to chew through.
+	password: z.string().min(1).max(256),
+	deviceId: z.string().max(128).optional(),
 });
 
 function parseExpiresIn(spec: string): number {
@@ -44,6 +56,30 @@ export async function POST(req: NextRequest) {
 		const parsed = Body.safeParse(await req.json().catch(() => ({})));
 		if (!parsed.success) throw badRequest("Invalid body", parsed.error.flatten());
 		const { email, password, deviceId } = parsed.data;
+
+		const ip =
+			req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
+			req.headers.get("x-real-ip") ??
+			null;
+
+		// Throttle login by IP and by email so credential stuffing and
+		// brute-force attempts hit a wall well before they get a chance
+		// to verify a password. Both must succeed; whichever returns first
+		// gets shown in the response headers.
+		const ipRl = await limitLoginIp(ip ?? "unknown");
+		const emailRl = await limitLoginEmail(email);
+		const rlHeaders = rateLimitHeaders(
+			ipRl.remaining < emailRl.remaining ? ipRl : emailRl,
+		);
+		if (!ipRl.success || !emailRl.success) {
+			const err = tooMany(
+				"Too many login attempts. Wait a minute and try again.",
+			);
+			return NextResponse.json(
+				{ error: { code: err.code, message: err.message } },
+				{ status: err.status, headers: rlHeaders },
+			);
+		}
 
 		// Global email lookup: we don't know the tenant yet, so bypass RLS.
 		// Returns at most one row because users.email is globally unique.
@@ -73,6 +109,9 @@ export async function POST(req: NextRequest) {
 
 		const ok = await verifyPassword(password, found.passwordHash);
 		if (!ok) throw unauthorized("Invalid credentials");
+		// User authenticated successfully - keep the rate-limit headers
+		// in the success response so well-behaved clients see how close
+		// they are to the limit.
 
 		const claims: AuthClaims = {
 			sub: found.id,
@@ -90,10 +129,6 @@ export async function POST(req: NextRequest) {
 		const refreshSeconds = parseExpiresIn(env.JWT_REFRESH_EXPIRES_IN);
 		const expiresAt = new Date(Date.now() + refreshSeconds * 1000);
 
-		const ip =
-			req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
-			req.headers.get("x-real-ip") ??
-			null;
 		const userAgent = req.headers.get("user-agent");
 
 		// Login writes live on auth-only tables (users, refresh_tokens) that
@@ -135,7 +170,7 @@ export async function POST(req: NextRequest) {
 			},
 		};
 
-		const res = NextResponse.json(body);
+		const res = NextResponse.json(body, { headers: rlHeaders });
 		// Also set an httpOnly cookie so the web admin can use cookie-based auth.
 		res.cookies.set("vcts_access", accessToken, {
 			httpOnly: true,

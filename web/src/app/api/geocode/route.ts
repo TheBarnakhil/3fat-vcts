@@ -2,21 +2,32 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { requireAuth } from "@/lib/auth/context";
 import { env } from "@/lib/env";
-import { badRequest, toResponse } from "@/lib/errors";
+import { badRequest, tooMany, toResponse } from "@/lib/errors";
+import { limitGeocode, rateLimitHeaders } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 
 /**
  * Thin proxy around Google's Geocoding API. We keep the key on the server
- * and rate limit it per-tenant later in Phase 10. For now we just require
- * a valid session.
+ * and rate-limit per (tenant, user) so a runaway typeahead can't burn the
+ * shared Maps quota.
  *
  *   GET /api/geocode?q=<address>       -> forward geocode
  *   GET /api/geocode?lat=..&lng=..     -> reverse geocode
  */
 export async function GET(req: NextRequest) {
   try {
-    await requireAuth();
+    const auth = await requireAuth();
+
+    const rl = await limitGeocode(auth.tid, auth.sub);
+    const rlHeaders = rateLimitHeaders(rl);
+    if (!rl.success) {
+      const err = tooMany("Too many geocode requests. Try again shortly.");
+      return NextResponse.json(
+        { error: { code: err.code, message: err.message } },
+        { status: err.status, headers: rlHeaders },
+      );
+    }
 
     const key = env.MAPS_API_KEY;
     if (!key) throw badRequest("Maps API key not configured");
@@ -66,7 +77,7 @@ export async function GET(req: NextRequest) {
       lng: r.geometry.location.lng,
     }));
 
-    return NextResponse.json({ results });
+    return NextResponse.json({ results }, { headers: rlHeaders });
   } catch (err) {
     return toResponse(err);
   }

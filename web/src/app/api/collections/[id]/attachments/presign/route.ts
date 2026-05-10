@@ -13,8 +13,10 @@ import {
 	forbidden,
 	notFound,
 	serverError,
+	tooMany,
 	toResponse,
 } from "@/lib/errors";
+import { limitAttachments, rateLimitHeaders } from "@/lib/rate-limit";
 import {
 	photoKey as buildPhotoKey,
 	presignPutUrl,
@@ -57,6 +59,18 @@ export async function POST(
 	try {
 		const auth = await requireAuth();
 		requireRole(auth, "agent", "manager", "super_admin");
+
+		// Throttle per (tenant, user) so a runaway client can't spam the
+		// presign endpoint and exhaust our R2 sign-budget.
+		const rl = await limitAttachments(auth.tid, auth.sub);
+		const rlHeaders = rateLimitHeaders(rl);
+		if (!rl.success) {
+			const err = tooMany("Too many attachment requests. Try again shortly.");
+			return NextResponse.json(
+				{ error: { code: err.code, message: err.message } },
+				{ status: err.status, headers: rlHeaders },
+			);
+		}
 
 		const { id } = await ctx.params;
 		const parsed = Body.safeParse(await req.json().catch(() => ({})));
@@ -109,12 +123,15 @@ export async function POST(
 
 		const url = await presignPutUrl(key, contentType);
 
-		return NextResponse.json({
-			url,
-			key,
-			method: "PUT",
-			headers: { "Content-Type": contentType },
-		});
+		return NextResponse.json(
+			{
+				url,
+				key,
+				method: "PUT",
+				headers: { "Content-Type": contentType },
+			},
+			{ headers: rlHeaders },
+		);
 	} catch (err) {
 		return toResponse(err);
 	}

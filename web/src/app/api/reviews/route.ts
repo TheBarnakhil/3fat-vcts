@@ -1,5 +1,6 @@
 import { desc, eq, isNotNull, isNull } from "drizzle-orm";
 import { NextResponse, type NextRequest } from "next/server";
+import { z } from "zod";
 
 import {
 	collections,
@@ -9,9 +10,13 @@ import {
 } from "@/db/schema";
 import { withoutTenant, withTenant } from "@/db/tenant";
 import { requireAuth, requireRole } from "@/lib/auth/context";
-import { toResponse } from "@/lib/errors";
+import { badRequest, toResponse } from "@/lib/errors";
 
 export const runtime = "nodejs";
+
+const Query = z.object({
+	status: z.enum(["pending", "resolved", "all"]).default("pending"),
+});
 
 /**
  * Phase 9 - supervisor review queue. Lists all rows in `supervisor_reviews`
@@ -27,7 +32,13 @@ export async function GET(req: NextRequest) {
 		requireRole(auth, "super_admin", "manager", "auditor");
 
 		const url = new URL(req.url);
-		const status = (url.searchParams.get("status") ?? "pending").toLowerCase();
+		const parsed = Query.safeParse({
+			status: url.searchParams.get("status") ?? undefined,
+		});
+		if (!parsed.success) {
+			throw badRequest("Invalid query", parsed.error.flatten());
+		}
+		const { status } = parsed.data;
 
 		const filtered = await withTenant(auth.tid, async (tx) => {
 			const where =

@@ -479,15 +479,49 @@ Surfaced during dogfooding: on Android 13+ the persistent active-duty notificati
 
 **Goal:** Security audit passes, app is installable via APK (later Play Store).
 
-- OWASP Mobile Top 10 self-audit checklist pass
-- **Tenant-isolation audit:** automated test suite that, for every endpoint, logs in as Tenant B and attempts to access every Tenant A entity by UUID - must all return 404
-- API rate limits tuned (per-tenant + per-agent), input validation review, parameterized queries verified
-- Crashlytics + Analytics SDKs integrated; ProGuard/R8 rules finalized
-- Device binding: JWT includes device fingerprint (hash of ANDROID_ID + install ID); cross-device token reuse rejected server-side
-- Photo upload antivirus scan (ClamAV Lambda or Vercel edge check)
-- Signed release APK build; add release keystore SHA-1 to the `ANDROID_API_KEY` restrictions in GCP
-- Internal testing track on Play Console (optional)
-- Backup + restore runbook for Neon; key rotation plan for JWT signing key
+Tracked in tracks rather than a single sweep. Track A first because everything else (device binding, release build, etc.) inherits its assumptions.
+
+### Track A - Security audit (server) [completed]
+
+- **Tenant-isolation verifier** at `web/src/scripts/verify-isolation.ts` (npm `verify:isolation`). Pure-HTTP test that logs in across both seeded tenants in admin + agent roles, then walks every UUID-bearing endpoint to assert: cross-tenant returns 404, cross-agent within tenant returns 403/404 (per route contract), agent-on-manager+ returns 403, anonymous + bad-token returns 401, cron without secret returns 401. Baseline: 46/46 passing on prod.
+- **Rate limits extended** beyond the original collections bucket:
+  - `loginIp` (`LOGIN_IP_RATE_PER_MIN`, default 20) and `loginEmail` (`LOGIN_EMAIL_RATE_PER_MIN`, default 5) on `POST /api/auth/login` to throttle credential stuffing.
+  - `attachments` on `POST /api/collections/{id}/attachments/presign`.
+  - `syncPush` on `POST /api/sync/push` (per-request, not per-record - the `MAX_BATCH=50` cap already constrains record volume).
+  - `locationLogs` on `POST /api/location-logs/batch`.
+  - `geocode` on `GET /api/geocode` (per tenant + user).
+  - `tenantBranding` on `POST /api/tenants/me/branding/logo/presign`.
+  All backed by Upstash Redis (sliding window) when KV env vars are present, with the existing in-memory dev fallback. Each rejection emits the standard `X-RateLimit-*` + `Retry-After` headers.
+- **Input validation sweep:**
+  - Login `password` capped at 256 chars to keep bcrypt safe from giant-string DoS; `email` capped at 254 (RFC 5321); `deviceId` capped at 128.
+  - `/api/audit` query params switched to a Zod schema (`cursor.coerce.number().positive()`, `limit.min(1).max(500)`, `action.regex(/^[a-z0-9._-]{1,64}$/)`).
+  - `/api/reviews` `status` validated as enum (`pending|resolved|all`).
+  - `/api/collections` GET query (`customerId/agentId/from/to/limit`) all run through Zod with `coerce.date()` instead of raw `new Date(string)`, eliminating the silent Invalid-Date path.
+  - Drizzle handles parameterised queries everywhere - manual audit confirmed (no string-concat SQL in the codebase).
+- **Key rotation runbook** at `docs/runbooks/key-rotation.md`: per-secret instructions for `JWT_*`, `PASSWORD_PEPPER`, `AUDIT_HMAC_SECRET`, `APP_DB_PASSWORD`, `CRON_SECRET`, R2 keys, plus a force-logout SQL recipe and a post-rotation verification checklist.
+
+### Track B - Device binding [pending]
+
+- JWT carries `dfp` claim = `hash(ANDROID_ID || install UUID)` plus a stable Android `Install ID` from DataStore.
+- Refresh tokens are bound to fingerprint; reuse from another device returns 401 with code `device_mismatch`.
+- Android `TenantDataWiper` clears the install UUID on logout; new install UUIDs are generated lazily on first login.
+- Existing tokens migrate gracefully via "no fingerprint = legacy session" rule that auto-upgrades on next refresh.
+
+### Track C - Carry-over feature gaps [pending]
+
+- C1. Android on-device PDF parity (currently stuck on the bare Phase 5 layout). Embed photo / signature / QR / branding / map exactly like the web template, falling back to text when attachments are still pending upload.
+- C2. Live SSE map: `/api/stream/agent-locations` channel and `/map` page with live agent pins powered by the Phase 7 location_logs.
+- C3. Customer-ledger CSV/PDF export on the customer detail page.
+
+### Track D - Build & release prep [pending]
+
+- Crashlytics + Analytics SDK wiring (Firebase project already provisioned in earlier phases).
+- TLS cert pin SPKI hashes (currently a placeholder in `app/build.gradle.kts`).
+- ProGuard/R8 rules finalised; verify Compose, Hilt, kotlinx-serialization, OkHttp/Retrofit reflection paths survive shrinking.
+- Photo upload antivirus scan (ClamAV Lambda or Vercel edge check) - to be revisited based on real upload volume.
+- Signed release APK build; add release keystore SHA-1 to `ANDROID_API_KEY` restrictions in GCP.
+- Backup + restore runbook for Neon; integrate with the rotation runbook above.
+- Optional: Play Console internal testing track.
 
 ---
 

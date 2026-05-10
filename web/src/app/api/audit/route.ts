@@ -1,15 +1,32 @@
 import { and, desc, eq, lt } from "drizzle-orm";
 import { NextResponse, type NextRequest } from "next/server";
+import { z } from "zod";
 
 import { auditTrail, users } from "@/db/schema";
 import { withoutTenant, withTenant } from "@/db/tenant";
 import { requireAuth, requireRole } from "@/lib/auth/context";
-import { toResponse } from "@/lib/errors";
+import { badRequest, toResponse } from "@/lib/errors";
 
 export const runtime = "nodejs";
 
 const PAGE_SIZE = 100;
 const MAX_PAGE_SIZE = 500;
+
+const Query = z.object({
+	cursor: z.coerce.number().int().positive().optional(),
+	limit: z.coerce
+		.number()
+		.int()
+		.min(1)
+		.max(MAX_PAGE_SIZE)
+		.default(PAGE_SIZE),
+	action: z
+		.string()
+		.trim()
+		.toLowerCase()
+		.regex(/^[a-z0-9._-]{1,64}$/, "Invalid action filter")
+		.optional(),
+});
 
 /**
  * Phase 9 - paginated read of the tenant's HMAC-chained audit trail.
@@ -27,17 +44,19 @@ export async function GET(req: NextRequest) {
 		requireRole(auth, "super_admin", "manager", "auditor");
 
 		const url = new URL(req.url);
-		const cursor = url.searchParams.get("cursor");
-		const limitRaw = url.searchParams.get("limit");
-		const actionFilter = url.searchParams.get("action")?.trim().toLowerCase();
-		const limit = Math.min(
-			MAX_PAGE_SIZE,
-			Math.max(1, Number(limitRaw) || PAGE_SIZE),
-		);
+		const parsed = Query.safeParse({
+			cursor: url.searchParams.get("cursor") ?? undefined,
+			limit: url.searchParams.get("limit") ?? undefined,
+			action: url.searchParams.get("action") ?? undefined,
+		});
+		if (!parsed.success) {
+			throw badRequest("Invalid query", parsed.error.flatten());
+		}
+		const { cursor, limit, action: actionFilter } = parsed.data;
 
 		const where = and(
 			eq(auditTrail.tenantId, auth.tid),
-			cursor ? lt(auditTrail.seq, Number(cursor)) : undefined,
+			cursor !== undefined ? lt(auditTrail.seq, cursor) : undefined,
 			actionFilter ? eq(auditTrail.action, actionFilter) : undefined,
 		);
 

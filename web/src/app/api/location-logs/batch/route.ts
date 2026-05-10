@@ -4,7 +4,8 @@ import { z } from "zod";
 import { locationLogs } from "@/db/schema";
 import { withTenant } from "@/db/tenant";
 import { requireAuth, requireRole } from "@/lib/auth/context";
-import { badRequest, toResponse } from "@/lib/errors";
+import { badRequest, tooMany, toResponse } from "@/lib/errors";
+import { limitLocationLogs, rateLimitHeaders } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 
@@ -54,6 +55,19 @@ export async function POST(req: NextRequest) {
 	try {
 		const auth = await requireAuth();
 		requireRole(auth, "agent");
+
+		// Throttle the request frequency. With a 1-minute tracker tick,
+		// one well-behaved device makes <2 requests/min; the cap of 60/min
+		// catches obviously-runaway clients well before they melt the lambda.
+		const rl = await limitLocationLogs(auth.tid, auth.sub);
+		const rlHeaders = rateLimitHeaders(rl);
+		if (!rl.success) {
+			const err = tooMany("Too many tracker pushes. Slow down.");
+			return NextResponse.json(
+				{ error: { code: err.code, message: err.message } },
+				{ status: err.status, headers: rlHeaders },
+			);
+		}
 
 		const parsed = BatchBody.safeParse(await req.json().catch(() => ({})));
 		if (!parsed.success) {
@@ -106,7 +120,7 @@ export async function POST(req: NextRequest) {
 			{ created: 0, duplicate: 0 },
 		);
 
-		return NextResponse.json({ outcomes, counts });
+		return NextResponse.json({ outcomes, counts }, { headers: rlHeaders });
 	} catch (err) {
 		return toResponse(err);
 	}

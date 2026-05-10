@@ -9,8 +9,10 @@ import {
 	badRequest,
 	notFound,
 	serverError,
+	tooMany,
 	toResponse,
 } from "@/lib/errors";
+import { limitTenantBranding, rateLimitHeaders } from "@/lib/rate-limit";
 import {
 	brandingLogoKey,
 	presignPutUrl,
@@ -41,6 +43,17 @@ export async function POST(req: NextRequest) {
 	try {
 		const auth = await requireAuth();
 		requireRole(auth, "super_admin");
+
+		const rl = await limitTenantBranding(auth.tid);
+		const rlHeaders = rateLimitHeaders(rl);
+		if (!rl.success) {
+			const err = tooMany("Too many branding uploads. Try again shortly.");
+			return NextResponse.json(
+				{ error: { code: err.code, message: err.message } },
+				{ status: err.status, headers: rlHeaders },
+			);
+		}
+
 		if (!r2Enabled()) {
 			throw serverError(
 				"Object storage is not configured. Branding uploads disabled.",
@@ -62,12 +75,15 @@ export async function POST(req: NextRequest) {
 
 		const key = brandingLogoKey(tenant.slug);
 		const url = await presignPutUrl(key, parsed.data.contentType);
-		return NextResponse.json({
-			url,
-			key,
-			method: "PUT",
-			headers: { "Content-Type": parsed.data.contentType },
-		});
+		return NextResponse.json(
+			{
+				url,
+				key,
+				method: "PUT",
+				headers: { "Content-Type": parsed.data.contentType },
+			},
+			{ headers: rlHeaders },
+		);
 	} catch (err) {
 		return toResponse(err);
 	}

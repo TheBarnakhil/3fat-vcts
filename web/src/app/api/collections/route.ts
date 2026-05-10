@@ -1,5 +1,6 @@
 import { and, desc, eq, gte, lt } from "drizzle-orm";
 import { NextResponse, type NextRequest } from "next/server";
+import { z } from "zod";
 
 import {
 	collections as collectionsTable,
@@ -21,6 +22,14 @@ import {
 } from "@/lib/errors";
 import { limitCollections, rateLimitHeaders } from "@/lib/rate-limit";
 
+const ListQuery = z.object({
+	customerId: z.string().uuid().optional(),
+	agentId: z.string().uuid().optional(),
+	from: z.coerce.date().optional(),
+	to: z.coerce.date().optional(),
+	limit: z.coerce.number().int().min(1).max(500).default(100),
+});
+
 export const runtime = "nodejs";
 
 function clientIp(req: NextRequest): string | null {
@@ -38,28 +47,30 @@ export async function GET(req: NextRequest) {
 		const auth = await requireAuth();
 		const url = new URL(req.url);
 
-		const customerId = url.searchParams.get("customerId");
-		const agentIdParam = url.searchParams.get("agentId");
-		const from = url.searchParams.get("from");
-		const to = url.searchParams.get("to");
-		const limitRaw = Number(url.searchParams.get("limit") ?? 100);
-		const limit = Math.min(
-			500,
-			Math.max(1, Number.isFinite(limitRaw) ? limitRaw : 100),
-		);
+		const parsed = ListQuery.safeParse({
+			customerId: url.searchParams.get("customerId") ?? undefined,
+			agentId: url.searchParams.get("agentId") ?? undefined,
+			from: url.searchParams.get("from") ?? undefined,
+			to: url.searchParams.get("to") ?? undefined,
+			limit: url.searchParams.get("limit") ?? undefined,
+		});
+		if (!parsed.success) {
+			throw badRequest("Invalid query", parsed.error.flatten());
+		}
+		const { customerId, agentId: agentIdParam, from, to, limit } = parsed.data;
 
 		// Agents are pinned to their own row; managers/admin/auditor can scope
 		// freely within the tenant via ?agentId=.
 		const effectiveAgentId =
-			auth.role === "agent" ? auth.sub : agentIdParam || null;
+			auth.role === "agent" ? auth.sub : agentIdParam ?? null;
 
 		const rows = await withTenant(auth.tid, async (tx) => {
 			const conds = [];
 			if (effectiveAgentId)
 				conds.push(eq(collectionsTable.agentId, effectiveAgentId));
 			if (customerId) conds.push(eq(collectionsTable.customerId, customerId));
-			if (from) conds.push(gte(collectionsTable.collectedAt, new Date(from)));
-			if (to) conds.push(lt(collectionsTable.collectedAt, new Date(to)));
+			if (from) conds.push(gte(collectionsTable.collectedAt, from));
+			if (to) conds.push(lt(collectionsTable.collectedAt, to));
 
 			return tx
 				.select({

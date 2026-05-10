@@ -61,6 +61,18 @@ const EnvSchema = z.object({
 	GPS_MAX_ACCURACY_M: z.coerce.number().min(5).max(500).default(50),
 	RECEIPT_PRESIGN_TTL_SECONDS: z.coerce.number().int().min(60).max(86400).default(900),
 
+	// --- Phase 10: rate-limit budgets. All buckets are 1-minute sliding
+	// windows backed by Upstash Redis (or an in-memory fallback in dev). The
+	// numbers below are deliberately generous to avoid annoying real users
+	// while still throttling obvious misuse / credential stuffing.
+	LOGIN_IP_RATE_PER_MIN: z.coerce.number().int().min(1).max(600).default(20),
+	LOGIN_EMAIL_RATE_PER_MIN: z.coerce.number().int().min(1).max(60).default(5),
+	ATTACHMENT_RATE_PER_MIN: z.coerce.number().int().min(1).max(600).default(60),
+	SYNC_PUSH_RATE_PER_MIN: z.coerce.number().int().min(1).max(600).default(60),
+	LOCATION_LOG_RATE_PER_MIN: z.coerce.number().int().min(1).max(600).default(60),
+	GEOCODE_RATE_PER_MIN: z.coerce.number().int().min(1).max(600).default(60),
+	TENANT_BRANDING_RATE_PER_MIN: z.coerce.number().int().min(1).max(60).default(10),
+
 	// --- Phase 7: location logging + visit validation
 	// Vercel Cron forwards Authorization: Bearer <CRON_SECRET>. Optional in
 	// dev so the route can be hit from a local terminal without a secret;
