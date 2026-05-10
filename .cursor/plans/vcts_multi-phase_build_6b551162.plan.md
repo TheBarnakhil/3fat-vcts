@@ -587,7 +587,12 @@ Every other tenant-scoped table identical.
   - `GET /api/platform/tenants` lists all tenants with user/customer/collection counts using `withoutTenant` behind platform auth. `POST /api/platform/tenants` provisions a tenant + first tenant `super_admin` in one transaction. `PATCH /api/platform/tenants/{id}` toggles `isActive` / edits name for suspend/reactivate workflows.
   - Hidden `/platform/login` and `/platform` console: operator login, tenant KPI cards, tenant table, create-tenant dialog, suspend/reactivate action.
   - New `pnpm db:seed:platform` seeds/refreshes `platform@3fat.test / Passw0rd!` (overridable by `PLATFORM_ADMIN_*` env vars). New `pnpm verify:platform` checks platform auth boundaries and tenant listing.
-- 11B [pending]. Self-serve signup flow at `/signup` - email verification, creates new tenant + super-admin user in one transaction, seeds default settings.
+- 11B [completed]. Self-serve signup flow at `/signup`.
+  - New `tenant_signup_requests` table stores pending workspace requests outside tenant data until the applicant verifies email control. Rows carry tenant slug/name, admin email/name, bcrypt+pepper password hash, verification token hash, settings JSON, expiry, and consumed timestamps.
+  - `POST /api/signup/request` validates slug/admin details, checks for existing tenant/user conflicts, stores or refreshes a pending request, and sends a verification link. If `RESEND_API_KEY` + `SIGNUP_FROM_EMAIL` are configured, it sends through Resend; otherwise dev/test responses include the verification URL and the server logs it for local testing. Production omits the URL unless email delivery is configured.
+  - `POST /api/signup/verify` hashes the token, locks the pending request, rejects expired/consumed links, re-checks tenant/user conflicts, then creates the tenant + first tenant `super_admin` in one transaction and appends `tenant.signup_verified` to the new tenant's audit chain.
+  - Public `/signup` page collects company slug/name + first admin details and shows either "check your email" or a development verification link. `/signup/verify?token=...` consumes the token and directs the new admin to `/login`.
+  - `verify:platform` now covers signup request metadata and auth boundaries around platform routes.
 - 11C [pending]. Tenant-level settings editor (geofence defaults, sync frequency, branding upload to R2 at `t/{slug}/brand/logo.png`).
 - 11D [pending]. Usage metrics per tenant (collections/month, agents active, storage used) for future billing hook.
 

@@ -88,6 +88,12 @@ const EnvSchema = z.object({
 	// which still works inside the admin portal but is unhappy in PDFs.
 	PUBLIC_BASE_URL: z.preprocess(emptyToUndef, z.string().url().optional()),
 	NEXT_PUBLIC_PUBLIC_BASE_URL: z.preprocess(emptyToUndef, z.string().url().optional()),
+
+	// --- Phase 11: self-serve signup email verification. If RESEND_API_KEY and
+	// SIGNUP_FROM_EMAIL are present, signup verification links are emailed.
+	// Otherwise dev/test responses include the link for local verification.
+	RESEND_API_KEY: z.preprocess(emptyToUndef, z.string().min(1).optional()),
+	SIGNUP_FROM_EMAIL: z.preprocess(emptyToUndef, z.string().email().optional()),
 });
 
 function load(): z.infer<typeof EnvSchema> {

@@ -20,6 +20,7 @@ const PLATFORM_ADMIN = {
 };
 
 const TENANT_ADMIN = { email: "admin@acme.test", password: "Passw0rd!" };
+const SIGNUP_SLUG = `verify-${Date.now().toString(36)}`;
 
 let passed = 0;
 let failed = 0;
@@ -108,6 +109,36 @@ async function main() {
 			ok("tenant list includes seeded acme tenant");
 		} else {
 			fail("tenant list shape", "expected tenants[] including acme");
+		}
+	}
+
+	console.log("\nSection C. Signup boundaries");
+	expectStatus(
+		"GET /api/signup/request is not allowed",
+		(await fetch(`${BASE}/api/signup/request`)).status,
+		405,
+	);
+
+	const signup = await postJson("/api/signup/request", {
+		tenantSlug: SIGNUP_SLUG,
+		tenantName: "Verifier Tenant",
+		adminName: "Verifier Admin",
+		adminEmail: `${SIGNUP_SLUG}@example.test`,
+		adminPassword: "Passw0rd!",
+	});
+	expectStatus("POST /api/signup/request", signup.status, 200);
+	if (signup.status === 200) {
+		const body = (await signup.json()) as {
+			ok?: boolean;
+			email?: string;
+			expiresAt?: string;
+			emailDeliveryConfigured?: boolean;
+			verificationUrl?: string;
+		};
+		if (body.ok && body.email && body.expiresAt) {
+			ok("signup request returns verification metadata");
+		} else {
+			fail("signup request shape", "expected ok/email/expiresAt");
 		}
 	}
 

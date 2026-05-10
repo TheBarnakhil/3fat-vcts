@@ -107,6 +107,35 @@ export const platformUsers = pgTable(
 );
 
 // ---------------------------------------------------------------------------
+// tenant_signup_requests - self-serve onboarding requests waiting for the
+// applicant to prove control of the admin email. Tenant rows are only created
+// after token verification, so abandoned signups don't pollute production data.
+// ---------------------------------------------------------------------------
+
+export const tenantSignupRequests = pgTable(
+	"tenant_signup_requests",
+	{
+		id: uuid("id").defaultRandom().primaryKey(),
+		tenantSlug: text("tenant_slug").notNull(),
+		tenantName: text("tenant_name").notNull(),
+		adminEmail: text("admin_email").notNull(),
+		adminName: text("admin_name").notNull(),
+		passwordHash: text("password_hash").notNull(),
+		tokenHash: text("token_hash").notNull(),
+		settings: jsonb("settings").notNull().default(sql`'{}'::jsonb`),
+		expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+		verifiedAt: timestamp("verified_at", { withTimezone: true }),
+		consumedAt: timestamp("consumed_at", { withTimezone: true }),
+		createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+	},
+	(t) => [
+		uniqueIndex("tenant_signup_requests_token_hash_uq").on(t.tokenHash),
+		index("tenant_signup_requests_slug_idx").on(t.tenantSlug),
+		index("tenant_signup_requests_admin_email_idx").on(t.adminEmail),
+	],
+);
+
+// ---------------------------------------------------------------------------
 // customers - outstanding balance is a denormalised running total maintained
 // by the collections write path (Phase 3). lat/lng is the registered location
 // used for server-side geo-fencing.
