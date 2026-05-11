@@ -27,6 +27,43 @@ Native Android client for the Verified Collection Tracking System.
 
 5. **Run.** Select `app` → `debug` → press Run. The first launch shows a splash logo, then the Login screen.
 
+## Building a debug APK
+
+From the repo root, use one of these scripts:
+
+```bash
+bash scripts/build-debug-apk.sh
+```
+
+On Windows PowerShell:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/build-debug-apk.ps1
+```
+
+Both scripts create:
+
+```text
+android/app/build/outputs/apk/debug/app-debug.apk
+```
+
+The scripts use `android/gradlew` / `android/gradlew.bat` if Android Studio has
+generated the Gradle wrapper. If the wrapper is not present, they fall back to a
+system `gradle` command.
+
+In Android Studio, the same action is:
+
+1. Open the `android/` folder, not the repository root.
+2. Wait for Gradle sync to finish.
+3. Use **Build → Build Bundle(s) / APK(s) → Build APK(s)**.
+4. When Studio shows the completion notification, click **locate**.
+
+You can also use the Gradle tool window:
+
+1. Open **View → Tool Windows → Gradle**.
+2. Expand **VCTS → app → Tasks → build**.
+3. Double-click **assembleDebug**.
+
 ## Phase 4 acceptance test
 
 | Step | Expected |
