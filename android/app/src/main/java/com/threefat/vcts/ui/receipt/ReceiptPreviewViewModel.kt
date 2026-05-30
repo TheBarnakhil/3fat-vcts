@@ -149,8 +149,13 @@ class ReceiptPreviewViewModel @Inject constructor(
                                 isRenderingPdf = false,
                                 pdfFile = result.getOrNull(),
                                 pdfError = result.exceptionOrNull()?.message,
-                                photoPresignedUrl = metadata?.photo?.url,
-                                signaturePresignedUrl = metadata?.signature?.url,
+                                // Preserve the last good presigned URL when the
+                                // best-effort metadata fetch fails (e.g. offline);
+                                // overwriting with null would blank an already
+                                // uploaded thumbnail.
+                                photoPresignedUrl = metadata?.photo?.url ?: it.photoPresignedUrl,
+                                signaturePresignedUrl = metadata?.signature?.url
+                                    ?: it.signaturePresignedUrl,
                             )
                         }
                     }

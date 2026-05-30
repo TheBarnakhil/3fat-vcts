@@ -14,7 +14,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -117,8 +117,8 @@ private fun CollectionsListBody(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
                 modifier = Modifier.fillMaxSize(),
             ) {
-                items(rows, key = { it.record.id }) { row ->
-                    StaggeredEntrance(visibleAt = rows.indexOf(row)) {
+                itemsIndexed(rows, key = { _, row -> row.record.id }) { index, row ->
+                    StaggeredEntrance(visibleAt = index) {
                         CollectionRowCard(row = row, onClick = { onRowClick(row) })
                     }
                 }

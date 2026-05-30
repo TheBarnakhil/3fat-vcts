@@ -39,14 +39,33 @@ interface CollectionDao {
      * authoritative server row. We delete-then-insert under one transaction
      * because the PK changes (clientUuid → server id), and Room's [Upsert]
      * cannot rekey a row.
+     *
+     * Pending local attachment paths are carried over inside the same
+     * transaction (read + write are atomic) so a capture/drainer write that
+     * races a pull can't be clobbered. A path is preserved only while the
+     * server has no uploaded key for that side; once the key lands the
+     * upload is done and the local pointer is dropped.
      */
     @androidx.room.Transaction
     suspend fun replaceLocalWithServer(
         clientUuid: String,
         server: CollectionEntity,
     ) {
+        val existing = findByClientUuid(clientUuid)
         deleteByClientUuid(clientUuid)
-        upsert(server)
+        upsert(server.mergeLocalPathsFrom(existing))
+    }
+
+    /**
+     * Upsert an authoritative server row while atomically carrying over any
+     * pending local attachment paths from the row it replaces. Use this
+     * instead of [upsert] on the pull path so a concurrent capture/drainer
+     * write isn't lost to a stale read.
+     */
+    @androidx.room.Transaction
+    suspend fun upsertPreservingLocalPaths(server: CollectionEntity) {
+        val existing = get(server.id)
+        upsert(server.mergeLocalPathsFrom(existing))
     }
 
     @Query("DELETE FROM collections WHERE client_uuid = :clientUuid")
@@ -117,3 +136,16 @@ interface CollectionDao {
     @Query("DELETE FROM collections")
     suspend fun clear()
 }
+
+/**
+ * Carry pending local attachment paths from a prior [existing] row onto an
+ * authoritative server row, but only while the server still lacks an uploaded
+ * key for that side. Keeps the upload-drainer's local pointers alive across a
+ * pull that arrived before the upload finished.
+ */
+private fun CollectionEntity.mergeLocalPathsFrom(
+    existing: CollectionEntity?,
+): CollectionEntity = copy(
+    photoLocalPath = if (photoUrl == null) existing?.photoLocalPath else null,
+    signatureLocalPath = if (signatureUrl == null) existing?.signatureLocalPath else null,
+)

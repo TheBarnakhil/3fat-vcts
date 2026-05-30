@@ -44,32 +44,23 @@ class PullSync @Inject constructor(
                 // pending optimistic copy, swap in the canonical version
                 // keyed by clientUuid when possible.
                 //
-                // Carry over local attachment paths when the server row
-                // still has no uploaded key for that side — the drainer
-                // has not finished (or not started) the upload yet. If we
-                // wiped the path here, nextAttachmentBatch would never
-                // pick the row up again and the attachment would be lost.
+                // The DAO methods carry over pending local attachment paths
+                // (when the server has no uploaded key yet) inside a single
+                // Room transaction, so a capture/drainer write that races
+                // this pull can't be clobbered by a stale read, and the
+                // drainer's nextAttachmentBatch keeps seeing the row.
                 val clientUuid = dto.clientUuid
                 if (clientUuid != null) {
                     val existing = collectionDao.findByClientUuid(clientUuid)
                     if (existing != null && existing.id != dto.id) {
                         collectionDao.replaceLocalWithServer(
                             clientUuid = clientUuid,
-                            server = dto.toEntity(now).copy(
-                                signatureLocalPath = if (dto.signatureUrl == null) existing.signatureLocalPath else null,
-                                photoLocalPath = if (dto.photoUrl == null) existing.photoLocalPath else null,
-                            ),
+                            server = dto.toEntity(now),
                         )
                         continue
                     }
                 }
-                val existingById = collectionDao.get(dto.id)
-                collectionDao.upsert(
-                    dto.toEntity(now).copy(
-                        signatureLocalPath = if (dto.signatureUrl == null) existingById?.signatureLocalPath else null,
-                        photoLocalPath = if (dto.photoUrl == null) existingById?.photoLocalPath else null,
-                    ),
-                )
+                collectionDao.upsertPreservingLocalPaths(dto.toEntity(now))
             }
         }
 
