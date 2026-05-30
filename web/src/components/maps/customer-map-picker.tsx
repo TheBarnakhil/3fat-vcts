@@ -10,6 +10,7 @@ import {
 } from "@vis.gl/react-google-maps";
 import { LoaderCircle, MapPin, Search } from "lucide-react";
 import { useMutation } from "@tanstack/react-query";
+import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -93,6 +94,7 @@ export function CustomerMapPicker({
               />
             </AdvancedMarker>
             <FenceCircle center={value} radiusM={radiusM} />
+            <RecenterOnChange center={value} />
           </Map>
         </div>
         {!readOnly && (
@@ -149,6 +151,17 @@ function FenceCircle({
   return null;
 }
 
+function RecenterOnChange({ center }: { center: LatLng }) {
+  const map = useMap();
+
+  React.useEffect(() => {
+    if (!map) return;
+    map.panTo(center);
+  }, [map, center.lat, center.lng]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return null;
+}
+
 function GeocodeSearch({
   defaultValue,
   onPick,
@@ -166,18 +179,24 @@ function GeocodeSearch({
       return r.results[0];
     },
     onSuccess: (r) => {
-      if (r) onPick(r);
+      if (!r) {
+        toast.error("No matching location found.");
+        return;
+      }
+      onPick(r);
+    },
+    onError: () => {
+      toast.error("Could not find that address. Try a more specific search.");
     },
   });
 
+  const runSearch = React.useCallback(() => {
+    const v = q.trim();
+    if (v) lookup.mutate(v);
+  }, [lookup, q]);
+
   return (
-    <form
-      className="flex items-center gap-2"
-      onSubmit={(e) => {
-        e.preventDefault();
-        if (q.trim()) lookup.mutate(q.trim());
-      }}
-    >
+    <div className="flex items-center gap-2">
       <div className="relative flex-1">
         <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
         <Input
@@ -185,9 +204,19 @@ function GeocodeSearch({
           placeholder="Search address"
           value={q}
           onChange={(e) => setQ(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key !== "Enter") return;
+            e.preventDefault();
+            runSearch();
+          }}
         />
       </div>
-      <Button type="submit" variant="secondary" disabled={lookup.isPending}>
+      <Button
+        type="button"
+        variant="secondary"
+        disabled={lookup.isPending}
+        onClick={runSearch}
+      >
         {lookup.isPending ? (
           <LoaderCircle className="size-4 animate-spin" />
         ) : (
@@ -195,6 +224,6 @@ function GeocodeSearch({
         )}
         Locate
       </Button>
-    </form>
+    </div>
   );
 }
