@@ -67,7 +67,7 @@ class ReceiptPreviewViewModel @Inject constructor(
             .distinctUntilChanged()
             .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
-    private var lastRenderedReceiptNo: String? = null
+    private var lastRenderedKey: String? = null
 
     init {
         viewModelScope.launch {
@@ -83,14 +83,26 @@ class ReceiptPreviewViewModel @Inject constructor(
                         it.copy(collection = collection, customer = customer)
                     }
 
-                    // Render lazily, and only once per receipt-no flip.
+                    // Re-render whenever the receipt number or any attachment
+                    // field changes (upload clears local path, sets url, etc.)
+                    // so presigned URLs and the embedded PDF stay fresh.
+                    val renderKey = collection?.let {
+                        listOf(
+                            it.receiptNo,
+                            it.photoUrl,
+                            it.signatureUrl,
+                            it.photoLocalPath,
+                            it.signatureLocalPath,
+                        ).joinToString("|")
+                    }
+
                     if (
                         collection != null &&
                         collection.syncStatus == SyncStatus.SYNCED &&
                         collection.receiptNo != null &&
-                        collection.receiptNo != lastRenderedReceiptNo
+                        renderKey != lastRenderedKey
                     ) {
-                        lastRenderedReceiptNo = collection.receiptNo
+                        lastRenderedKey = renderKey
                         _state.update { it.copy(isRenderingPdf = true) }
 
                         // Phase 10 / Track C1 - mirror the web template:
@@ -137,6 +149,8 @@ class ReceiptPreviewViewModel @Inject constructor(
                                 isRenderingPdf = false,
                                 pdfFile = result.getOrNull(),
                                 pdfError = result.exceptionOrNull()?.message,
+                                photoPresignedUrl = metadata?.photo?.url,
+                                signaturePresignedUrl = metadata?.signature?.url,
                             )
                         }
                     }
@@ -168,6 +182,8 @@ data class ReceiptUiState(
     val isRenderingPdf: Boolean = false,
     val pdfFile: File? = null,
     val pdfError: String? = null,
+    val photoPresignedUrl: String? = null,
+    val signaturePresignedUrl: String? = null,
 ) {
     /**
      * Verification URL embedded in the share-sheet text. Only meaningful

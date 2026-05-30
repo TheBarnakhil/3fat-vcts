@@ -131,6 +131,8 @@ private fun Body(
 
             AttachmentsCard(
                 collection = collection,
+                photoPresignedUrl = state.photoPresignedUrl,
+                signaturePresignedUrl = state.signaturePresignedUrl,
                 onPhotoClick = { collectionKey?.let(onCapturePhoto) },
                 onSignatureClick = { collectionKey?.let(onCaptureSignature) },
             )
@@ -221,6 +223,8 @@ private fun Body(
 @Composable
 private fun AttachmentsCard(
     collection: CollectionRecord,
+    photoPresignedUrl: String?,
+    signaturePresignedUrl: String?,
     onPhotoClick: () -> Unit,
     onSignatureClick: () -> Unit,
 ) {
@@ -245,6 +249,7 @@ private fun AttachmentsCard(
                     ),
                     icon = Icons.Filled.CameraAlt,
                     localFile = collection.photoLocalPath?.let(::File),
+                    remoteUrl = photoPresignedUrl,
                     onClick = onPhotoClick,
                     modifier = Modifier.weight(1f),
                 )
@@ -256,6 +261,7 @@ private fun AttachmentsCard(
                     ),
                     icon = Icons.Filled.Edit,
                     localFile = collection.signatureLocalPath?.let(::File),
+                    remoteUrl = signaturePresignedUrl,
                     onClick = onSignatureClick,
                     modifier = Modifier.weight(1f),
                 )
@@ -280,6 +286,7 @@ private fun AttachmentTile(
     statusLabel: String,
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     localFile: File?,
+    remoteUrl: String?,
     onClick: () -> Unit,
     modifier: Modifier,
 ) {
@@ -307,6 +314,15 @@ private fun AttachmentTile(
                     AsyncImage(
                         model = ImageRequest.Builder(context)
                             .data(localFile)
+                            .build(),
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                } else if (remoteUrl != null) {
+                    val context = LocalContext.current
+                    AsyncImage(
+                        model = ImageRequest.Builder(context)
+                            .data(remoteUrl)
                             .build(),
                         contentDescription = null,
                         modifier = Modifier.fillMaxSize(),
