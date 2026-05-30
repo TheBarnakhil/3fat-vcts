@@ -21,6 +21,7 @@ import com.threefat.vcts.ui.auth.LoginScreen
 import com.threefat.vcts.ui.capture.PhotoCaptureScreen
 import com.threefat.vcts.ui.capture.SignaturePadScreen
 import com.threefat.vcts.ui.collection.CollectionFormScreen
+import com.threefat.vcts.ui.collections.CollectionsListScreen
 import com.threefat.vcts.ui.customers.CustomerDetailScreen
 import com.threefat.vcts.ui.customers.CustomersListScreen
 import com.threefat.vcts.ui.dashboard.DashboardScreen
@@ -84,6 +85,14 @@ fun AppNavHost(
                 onOpenSettings = { navController.navigate(Routes.Settings) },
                 onOpenCustomers = { navController.navigate(Routes.Customers) },
                 onOpenQueue = { navController.navigate(Routes.OfflineQueue) },
+                onOpenCollections = { navController.navigate(Routes.Collections) },
+            )
+        }
+
+        composable(Routes.Collections) {
+            CollectionsListScreen(
+                onBack = { navController.popBackStack() },
+                onOpenReceipt = { id -> navController.navigate(Routes.Receipt.with(id, replayed = true)) },
             )
         }
 

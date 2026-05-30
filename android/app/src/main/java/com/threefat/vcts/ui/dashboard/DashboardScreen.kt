@@ -15,6 +15,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.CloudUpload
+import androidx.compose.material.icons.filled.ListAlt
 import androidx.compose.material.icons.filled.PeopleAlt
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AssistChip
@@ -50,6 +51,7 @@ fun DashboardScreen(
     onOpenSettings: () -> Unit,
     onOpenCustomers: () -> Unit,
     onOpenQueue: () -> Unit,
+    onOpenCollections: () -> Unit,
     viewModel: DashboardViewModel = hiltViewModel(),
 ) {
     val info by viewModel.info.collectAsStateWithLifecycle()
@@ -144,6 +146,8 @@ fun DashboardScreen(
 
             CustomersEntryCard(onClick = onOpenCustomers)
 
+            CollectionsEntryCard(onClick = onOpenCollections)
+
             TrackingCard(
                 enabled = trackingEnabled,
                 lastFixAt = trackingLastFixAt,
@@ -155,6 +159,55 @@ fun DashboardScreen(
             if (pendingCount > 0) {
                 QueueEntryCard(pendingCount = pendingCount, onClick = onOpenQueue)
             }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun CollectionsEntryCard(onClick: () -> Unit) {
+    ElevatedCard(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(20.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Surface(
+                color = MaterialTheme.colorScheme.secondaryContainer,
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.size(48.dp),
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Icons.Filled.ListAlt,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                    )
+                }
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.dashboard_collections_card_title),
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = stringResource(R.string.dashboard_collections_card_subtitle),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                contentDescription = stringResource(R.string.dashboard_open_collections),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }

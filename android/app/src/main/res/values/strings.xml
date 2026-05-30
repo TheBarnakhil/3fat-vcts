@@ -26,6 +26,19 @@
     <string name="dashboard_open_customers">Open customers</string>
     <string name="dashboard_customers_card_title">Customers</string>
     <string name="dashboard_customers_card_subtitle">Search, walk in, record a collection.</string>
+    <string name="dashboard_collections_card_title">Collections</string>
+    <string name="dashboard_collections_card_subtitle">Review the payments you\'ve recorded.</string>
+    <string name="dashboard_open_collections">Open collections</string>
+
+    <!-- Collections list -->
+    <string name="collections_title">Collections</string>
+    <string name="collections_empty_title">No collections yet</string>
+    <string name="collections_empty_subtitle">Collections you record will appear here once they sync.</string>
+    <string name="collections_receipt_pending">Receipt pending</string>
+    <string name="collection_status_synced">Synced</string>
+    <string name="collection_status_syncing">Syncing…</string>
+    <string name="collection_status_pending">Pending</string>
+    <string name="collection_status_failed">Failed</string>
 
     <!-- Customers list -->
     <string name="customers_title">Customers</string>

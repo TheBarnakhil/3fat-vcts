@@ -14,6 +14,7 @@ object Routes {
     const val Dashboard = "dashboard"
     const val Settings = "settings"
     const val Customers = "customers"
+    const val Collections = "collections"
     const val OfflineQueue = "offline-queue"
 
     object Customer {

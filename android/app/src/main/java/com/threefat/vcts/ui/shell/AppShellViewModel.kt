@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.threefat.vcts.data.preferences.AppPreferences
 import com.threefat.vcts.data.session.SessionStore
 import com.threefat.vcts.domain.model.ThemeMode
+import com.threefat.vcts.sync.SyncScheduler
 import com.threefat.vcts.ui.nav.Routes
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
@@ -27,6 +28,7 @@ import javax.inject.Inject
 class AppShellViewModel @Inject constructor(
     sessionStore: SessionStore,
     appPreferences: AppPreferences,
+    syncScheduler: SyncScheduler,
 ) : ViewModel() {
 
     private val initialStart = if (sessionStore.persistedRefreshToken.isNullOrBlank()) {
@@ -40,4 +42,10 @@ class AppShellViewModel @Inject constructor(
 
     val themeMode: StateFlow<ThemeMode> = appPreferences.themeMode
         .stateIn(viewModelScope, SharingStarted.Eagerly, ThemeMode.System)
+
+    init {
+        if (!sessionStore.persistedRefreshToken.isNullOrBlank()) {
+            syncScheduler.requestImmediate()
+        }
+    }
 }

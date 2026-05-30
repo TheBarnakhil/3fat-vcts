@@ -6,6 +6,7 @@ import com.threefat.vcts.data.remote.dto.ApiErrorBody
 import com.threefat.vcts.data.remote.dto.LoginRequest
 import com.threefat.vcts.data.session.SessionStore
 import com.threefat.vcts.domain.model.Session
+import com.threefat.vcts.sync.SyncScheduler
 import kotlinx.serialization.json.Json
 import retrofit2.HttpException
 import java.io.IOException
@@ -30,6 +31,7 @@ class AuthRepository @Inject constructor(
     private val json: Json,
     private val tenantWiper: TenantDataWiper,
     private val appPreferences: AppPreferences,
+    private val syncScheduler: SyncScheduler,
 ) {
 
     suspend fun login(email: String, password: String): LoginOutcome = try {
@@ -56,6 +58,7 @@ class AuthRepository @Inject constructor(
             // device. Wipe Room + ESP residue before the new identity wins.
             tenantWiper.wipeOnTenantChange(oldTenantId, newTenantId)
         }
+        syncScheduler.requestImmediate()
         LoginOutcome.Success(session)
     } catch (e: HttpException) {
         val body = runCatching {
