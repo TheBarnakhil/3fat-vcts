@@ -85,6 +85,14 @@
     <string name="collection_error_server">Server error. Try again in a moment.</string>
     <string name="collection_error_offline">No internet. Phase 6 will queue this; for now please reconnect.</string>
     <string name="collection_error_unknown">Something went wrong. Please retry.</string>
+    <string name="collection_cms_field_required">%1$s is required</string>
+
+    <!-- CMS integration -->
+    <string name="cms_form_section_title">Additional details</string>
+    <string name="cms_form_section_subtitle">Fill in the extra fields configured by your admin. Saved offline and synced automatically.</string>
+    <string name="cms_form_field_required">This field is required</string>
+    <string name="cms_webview_open">Open integration form</string>
+    <string name="cms_webview_title">Integration form</string>
 
     <!-- Receipt -->
     <string name="receipt_title">Receipt</string>

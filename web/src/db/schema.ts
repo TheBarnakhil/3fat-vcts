@@ -514,6 +514,24 @@ export const refreshTokens = pgTable(
 	],
 );
 
+// collection_integrations - per-tenant Collection Integration config.
+export const collectionIntegrationMode = pgEnum("collection_integration_mode", [
+	"webview",
+	"offline",
+]);
+
+export const collectionIntegrations = pgTable("collection_integrations", {
+	tenantId: uuid("tenant_id")
+		.primaryKey()
+		.references(() => tenants.id, { onDelete: "cascade" }),
+	mode: collectionIntegrationMode("mode").notNull(),
+	webviewUrl: text("webview_url"),
+	jsonSchema: jsonb("json_schema"),
+	uiSchema: jsonb("ui_schema"),
+	directusCollection: text("directus_collection"),
+	updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 // ---------------------------------------------------------------------------
 // Type exports for use in app code
 // ---------------------------------------------------------------------------

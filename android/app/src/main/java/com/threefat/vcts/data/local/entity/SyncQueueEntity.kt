@@ -42,5 +42,6 @@ data class SyncQueueEntity(
 ) {
     companion object {
         const val PAYLOAD_COLLECTION_CREATE = "collection.create"
+        const val PAYLOAD_CMS_ITEM_CREATE = "cms.item.create"
     }
 }

@@ -94,6 +94,20 @@ const EnvSchema = z.object({
 	// Otherwise dev/test responses include the link for local verification.
 	RESEND_API_KEY: z.preprocess(emptyToUndef, z.string().min(1).optional()),
 	SIGNUP_FROM_EMAIL: z.preprocess(emptyToUndef, z.string().email().optional()),
+
+	// --- Directus CMS (Collection Integration). Optional until CMS routes are
+	// wired; `/api/cms/*` proxy degrades gracefully when absent.
+	DIRECTUS_URL: z.preprocess(emptyToUndef, z.string().url().optional()),
+	// Static admin token from Directus (Settings → Access Tokens). Used server-
+	// side only for schema provisioning (create/update tenant collections).
+	DIRECTUS_ADMIN_TOKEN: z.preprocess(emptyToUndef, z.string().min(1).optional()),
+	// JSON map of tenant slug → Directus static token, e.g.
+	// `{"acme":"abc123","beta":"def456"}`. Proxy uses the token scoped to that
+	// tenant's `t_<slug>__` collections.
+	DIRECTUS_TENANT_TOKENS: z.preprocess(emptyToUndef, z.string().min(2).optional()),
+	// Origin allowed by Directus CORS (set the same value in Coolify as
+	// CORS_ORIGIN). Documented here for parity; consumed by Directus, not Next.
+	DIRECTUS_CORS_ORIGIN: z.preprocess(emptyToUndef, z.string().url().optional()),
 });
 
 function load(): z.infer<typeof EnvSchema> {

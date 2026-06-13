@@ -37,6 +37,13 @@ object Routes {
             "receipt/$id?replayed=$replayed"
     }
 
+    /** CMS integration WebView (admin-configured URL). */
+    object IntegrationWebView {
+        const val ArgUrl = "url"
+        const val Pattern = "integration/webview?url={$ArgUrl}"
+        fun with(url: String) = "integration/webview?url=${android.net.Uri.encode(url)}"
+    }
+
     /** Phase 8 - capture screens are reached from the receipt preview. */
     object Capture {
         const val ArgCollectionId = "collectionId"

@@ -49,6 +49,7 @@ const TENANT_TABLES = [
 	"audit_trail",
 	"sync_queue",
 	"supervisor_reviews",
+	"collection_integrations",
 ];
 
 // Tables auth flows must read before the tenant is known. Not RLS-scoped;

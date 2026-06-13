@@ -4,6 +4,7 @@ import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFact
 import com.threefat.vcts.BuildConfig
 import com.threefat.vcts.data.remote.AttachmentsApi
 import com.threefat.vcts.data.remote.AuthApi
+import com.threefat.vcts.data.remote.CmsApi
 import com.threefat.vcts.data.remote.CollectionsApi
 import com.threefat.vcts.data.remote.CustomersApi
 import com.threefat.vcts.data.remote.LocationLogsApi
@@ -149,6 +150,11 @@ object NetworkModule {
     @Singleton
     fun provideAttachmentsApi(retrofit: Retrofit): AttachmentsApi =
         retrofit.create(AttachmentsApi::class.java)
+
+    @Provides
+    @Singleton
+    fun provideCmsApi(retrofit: Retrofit): CmsApi =
+        retrofit.create(CmsApi::class.java)
 
     @Provides
     @Singleton

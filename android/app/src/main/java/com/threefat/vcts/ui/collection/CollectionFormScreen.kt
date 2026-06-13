@@ -19,10 +19,12 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -44,7 +46,9 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.threefat.vcts.R
+import com.threefat.vcts.data.repository.IntegrationMode
 import com.threefat.vcts.domain.model.PaymentMode
+import com.threefat.vcts.ui.cms.JsonSchemaForm
 import com.threefat.vcts.ui.theme.MonoFamily
 import androidx.compose.foundation.text.KeyboardOptions
 
@@ -53,6 +57,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 fun CollectionFormScreen(
     onBack: () -> Unit,
     onSubmitted: (collectionId: String, replayed: Boolean) -> Unit,
+    onOpenWebView: (url: String) -> Unit,
     viewModel: CollectionFormViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -64,8 +69,17 @@ fun CollectionFormScreen(
             when (event) {
                 is CollectionFormEvent.NavigateToReceipt ->
                     onSubmitted(event.collectionId, event.replayed)
+                is CollectionFormEvent.NavigateToWebView ->
+                    onOpenWebView(event.url)
             }
         }
+    }
+
+    LaunchedEffect(state.cmsFieldError) {
+        val missing = state.cmsFieldError ?: return@LaunchedEffect
+        snackbar.showSnackbar(
+            message = context.getString(R.string.collection_cms_field_required, missing),
+        )
     }
 
     LaunchedEffect(state.submissionError) {
@@ -193,6 +207,27 @@ private fun Body(
                 .fillMaxWidth()
                 .height(96.dp),
         )
+
+        if (state.integrationMode == IntegrationMode.Offline && state.cmsFields.isNotEmpty()) {
+            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+            JsonSchemaForm(
+                fields = state.cmsFields,
+                values = state.cmsValues,
+                onValueChange = viewModel::onCmsFieldChange,
+                errorFieldTitle = state.cmsFieldError,
+            )
+        }
+
+        if (state.integrationMode == IntegrationMode.WebView && !state.webviewUrl.isNullOrBlank()) {
+            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+            OutlinedButton(
+                onClick = viewModel::onOpenWebViewClick,
+                enabled = !state.isSubmitting,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(stringResource(R.string.cms_webview_open))
+            }
+        }
 
         Button(
             onClick = viewModel::onReviewClick,

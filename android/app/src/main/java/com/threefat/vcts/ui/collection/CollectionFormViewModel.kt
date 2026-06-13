@@ -5,10 +5,16 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.threefat.vcts.data.location.LocationProvider
 import com.threefat.vcts.data.remote.dto.CollectionCreateBody
+import com.threefat.vcts.data.repository.CmsRepository
 import com.threefat.vcts.data.repository.CollectionsRepository
 import com.threefat.vcts.data.repository.CustomersRepository
+import com.threefat.vcts.data.repository.IntegrationMode
 import com.threefat.vcts.data.repository.SubmitCollectionFailure
 import com.threefat.vcts.data.repository.SubmitCollectionOutcome
+import com.threefat.vcts.domain.cms.JsonSchemaField
+import com.threefat.vcts.domain.cms.buildJsonPayload
+import com.threefat.vcts.domain.cms.parseJsonSchemaFields
+import com.threefat.vcts.domain.cms.validateRequiredFields
 import com.threefat.vcts.domain.geo.DEFAULT_GPS_MAX_ACCURACY_M
 import com.threefat.vcts.domain.geo.geofenceStatus
 import com.threefat.vcts.domain.model.Customer
@@ -29,6 +35,7 @@ class CollectionFormViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val customersRepository: CustomersRepository,
     private val collectionsRepository: CollectionsRepository,
+    private val cmsRepository: CmsRepository,
     private val locationProvider: LocationProvider,
 ) : ViewModel() {
 
@@ -52,7 +59,24 @@ class CollectionFormViewModel @Inject constructor(
     init {
         viewModelScope.launch {
             val customer = customersRepository.get(customerId)
-            _state.update { it.copy(customer = customer) }
+            val integration = runCatching { cmsRepository.fetchIntegration() }.getOrNull()
+            val cmsFields = if (
+                integration?.mode == IntegrationMode.Offline &&
+                integration.jsonSchema != null
+            ) {
+                parseJsonSchemaFields(integration.jsonSchema, integration.uiSchema)
+            } else {
+                emptyList()
+            }
+            _state.update {
+                it.copy(
+                    customer = customer,
+                    integrationMode = integration?.mode ?: IntegrationMode.None,
+                    webviewUrl = integration?.webviewUrl,
+                    directusCollection = integration?.directusCollection,
+                    cmsFields = cmsFields,
+                )
+            }
         }
     }
 
@@ -83,6 +107,22 @@ class CollectionFormViewModel @Inject constructor(
         _state.update { it.copy(remarks = value.take(500)) }
     }
 
+    fun onCmsFieldChange(key: String, value: String) {
+        _state.update {
+            it.copy(
+                cmsValues = it.cmsValues + (key to value),
+                cmsFieldError = null,
+            )
+        }
+    }
+
+    fun onOpenWebViewClick() {
+        val url = state.value.webviewUrl ?: return
+        viewModelScope.launch {
+            _events.send(CollectionFormEvent.NavigateToWebView(url))
+        }
+    }
+
     fun onReviewClick() {
         val s = state.value
         val amount = s.amountText.toDoubleOrNull()
@@ -90,6 +130,14 @@ class CollectionFormViewModel @Inject constructor(
             amount == null || amount <= 0 -> CollectionFieldError.AmountInvalid
             PaymentMode.requiresReference(s.paymentMode) && s.refNo.isNullOrBlank() ->
                 CollectionFieldError.RefRequired
+            s.integrationMode == IntegrationMode.Offline && s.cmsFields.isNotEmpty() -> {
+                val missing = validateRequiredFields(s.cmsValues, s.cmsFields)
+                if (missing != null) {
+                    _state.update { it.copy(cmsFieldError = missing) }
+                    return
+                }
+                null
+            }
             else -> null
         }
         if (err != null) {
@@ -173,6 +221,7 @@ class CollectionFormViewModel @Inject constructor(
 
             when (val outcome = collectionsRepository.submit(body)) {
                 is SubmitCollectionOutcome.Queued -> {
+                    queueCmsResponseIfNeeded(s)
                     _state.update { it.copy(isSubmitting = false, submissionError = null) }
                     _events.send(
                         CollectionFormEvent.NavigateToReceipt(
@@ -182,6 +231,7 @@ class CollectionFormViewModel @Inject constructor(
                     )
                 }
                 is SubmitCollectionOutcome.AlreadyQueued -> {
+                    queueCmsResponseIfNeeded(s)
                     _state.update { it.copy(isSubmitting = false, submissionError = null) }
                     _events.send(
                         CollectionFormEvent.NavigateToReceipt(
@@ -206,6 +256,14 @@ class CollectionFormViewModel @Inject constructor(
         _state.update { it.copy(submissionError = null) }
     }
 
+    private suspend fun queueCmsResponseIfNeeded(state: CollectionFormUiState) {
+        if (state.integrationMode != IntegrationMode.Offline) return
+        val collection = state.directusCollection ?: return
+        if (state.cmsFields.isEmpty()) return
+        val payload = buildJsonPayload(state.cmsValues, state.cmsFields)
+        cmsRepository.queueItemResponse(collection = collection, payload = payload)
+    }
+
     private fun SubmitCollectionOutcome.Failure.toUi(): CollectionSubmitError = when (reason) {
         SubmitCollectionFailure.Validation -> CollectionSubmitError.Validation(message)
         // Storage failures usually mean the encrypted Room DB is gone or
@@ -223,6 +281,12 @@ data class CollectionFormUiState(
     val refNo: String? = null,
     val chequeDate: String? = null,
     val remarks: String? = null,
+    val integrationMode: IntegrationMode = IntegrationMode.None,
+    val webviewUrl: String? = null,
+    val directusCollection: String? = null,
+    val cmsFields: List<JsonSchemaField> = emptyList(),
+    val cmsValues: Map<String, String> = emptyMap(),
+    val cmsFieldError: String? = null,
     val isSubmitting: Boolean = false,
     val showConfirm: Boolean = false,
     val fieldError: CollectionFieldError? = null,
@@ -244,5 +308,6 @@ sealed interface CollectionSubmitError {
 
 sealed interface CollectionFormEvent {
     data class NavigateToReceipt(val collectionId: String, val replayed: Boolean) : CollectionFormEvent
+    data class NavigateToWebView(val url: String) : CollectionFormEvent
 }
 

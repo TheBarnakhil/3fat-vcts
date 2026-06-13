@@ -18,8 +18,10 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.threefat.vcts.ui.auth.LoginScreen
+import java.net.URLDecoder
 import com.threefat.vcts.ui.capture.PhotoCaptureScreen
 import com.threefat.vcts.ui.capture.SignaturePadScreen
+import com.threefat.vcts.ui.cms.IntegrationWebViewScreen
 import com.threefat.vcts.ui.collection.CollectionFormScreen
 import com.threefat.vcts.ui.collections.CollectionsListScreen
 import com.threefat.vcts.ui.customers.CustomerDetailScreen
@@ -139,6 +141,22 @@ fun AppNavHost(
                         popUpTo(Routes.Collection.Pattern) { inclusive = true }
                     }
                 },
+                onOpenWebView = { url ->
+                    navController.navigate(Routes.IntegrationWebView.with(url))
+                },
+            )
+        }
+
+        composable(
+            route = Routes.IntegrationWebView.Pattern,
+            arguments = listOf(
+                navArgument(Routes.IntegrationWebView.ArgUrl) { type = NavType.StringType },
+            ),
+        ) { entry ->
+            val encodedUrl = checkNotNull(entry.arguments?.getString(Routes.IntegrationWebView.ArgUrl))
+            IntegrationWebViewScreen(
+                url = URLDecoder.decode(encodedUrl, Charsets.UTF_8.name()),
+                onBack = { navController.popBackStack() },
             )
         }
 

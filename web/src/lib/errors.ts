@@ -32,6 +32,9 @@ export function tooMany(message = "Too many requests"): HttpError {
 export function serverError(message = "Internal error"): HttpError {
 	return new HttpError(500, "internal_error", message);
 }
+export function serviceUnavailable(message = "Service unavailable"): HttpError {
+	return new HttpError(503, "service_unavailable", message);
+}
 
 export function toResponse(err: unknown): NextResponse {
 	if (err instanceof HttpError) {

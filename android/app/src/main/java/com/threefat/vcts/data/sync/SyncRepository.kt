@@ -27,6 +27,7 @@ import kotlinx.coroutines.flow.Flow
 @Singleton
 class SyncRepository @Inject constructor(
     private val pushDrainer: CollectionsPushDrainer,
+    private val cmsPushDrainer: CmsPushDrainer,
     private val locationLogsPushDrainer: LocationLogsPushDrainer,
     private val attachmentsPushDrainer: AttachmentsPushDrainer,
     private val pullSync: PullSync,
@@ -61,6 +62,7 @@ class SyncRepository @Inject constructor(
         // Attachments must run after the collection push so any rows
         // that just got their server id are eligible.
         val attachmentPush = drainAttachmentsUntilStable()
+        val cmsPush = drainCmsUntilStable()
         val pull = runCatching { pullSync.pullOnce() }.getOrElse {
             // Pull failures are non-fatal for this round; let the worker
             // backoff and retry on the next tick.
@@ -68,6 +70,7 @@ class SyncRepository @Inject constructor(
         }
         val anyClean =
             push?.isClean == true ||
+                cmsPush?.isClean == true ||
                 locationPush?.isClean == true ||
                 attachmentPush?.isClean == true ||
                 pull != null
@@ -120,6 +123,19 @@ class SyncRepository @Inject constructor(
         while (rounds < MAX_ROUNDS) {
             val pass = locationLogsPushDrainer.drainOnce()
             aggregate = combineLocation(aggregate, pass)
+            if (pass.attempted == 0) break
+            if (pass.transientFailures > 0) break
+            rounds += 1
+        }
+        return aggregate
+    }
+
+    private suspend fun drainCmsUntilStable(): PushSummary? {
+        var aggregate: PushSummary? = null
+        var rounds = 0
+        while (rounds < MAX_ROUNDS) {
+            val pass = cmsPushDrainer.drainOnce()
+            aggregate = combine(aggregate, pass)
             if (pass.attempted == 0) break
             if (pass.transientFailures > 0) break
             rounds += 1

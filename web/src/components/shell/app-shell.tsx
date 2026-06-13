@@ -11,6 +11,7 @@ import {
   MapPin,
   Menu,
   Palette,
+  Plug2,
   ReceiptText,
   Route,
   ShieldCheck,
@@ -57,6 +58,7 @@ const NAV: readonly NavItem[] = [
   { href: "/reviews", label: "Reviews", icon: AlertOctagon },
   { href: "/audit", label: "Audit", icon: ShieldCheck },
   { href: "/branding", label: "Tenant settings", icon: Palette },
+  { href: "/collection-integration", label: "Collection integration", icon: Plug2 },
   { href: "/map", label: "Live map", icon: MapPin },
 ];
 
