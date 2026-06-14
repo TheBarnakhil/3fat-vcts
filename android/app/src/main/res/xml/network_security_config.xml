@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Cleartext is disabled for our production host; OkHttp does pinning at the
-  app layer (NetworkModule). This file ensures that even non-OkHttp HTTP
-  attempts (e.g. accidental WebView loads) are blocked over HTTP.
+  Cleartext is disabled by default; OkHttp API traffic stays HTTPS-only via
+  NetworkModule pinning. WebView integration URLs are admin-configured and may
+  point at a self-hosted Directus instance on HTTP until TLS is enabled there.
 
-  Debug builds may need to talk to localhost / 10.0.2.2 over plaintext when
-  testing without a tunnel; that's allowed via the debug-overrides block.
+  When Directus moves to HTTPS, remove or narrow the domain-config below and
+  use https:// URLs in Collection integration → WebView.
 -->
 <network-security-config>
     <base-config cleartextTrafficPermitted="false">
@@ -14,7 +14,12 @@
         </trust-anchors>
     </base-config>
 
-    <debug-overrides>
+    <!-- Coolify sslip.io Directus host (WebView integration mode). -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">139.59.31.142.sslip.io</domain>
+    </domain-config>
+
+    <debug-overrides cleartextTrafficPermitted="true">
         <trust-anchors>
             <certificates src="system" />
             <certificates src="user" />

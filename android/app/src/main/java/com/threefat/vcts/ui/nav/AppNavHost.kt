@@ -5,6 +5,8 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -154,10 +156,12 @@ fun AppNavHost(
             ),
         ) { entry ->
             val encodedUrl = checkNotNull(entry.arguments?.getString(Routes.IntegrationWebView.ArgUrl))
-            IntegrationWebViewScreen(
-                url = URLDecoder.decode(encodedUrl, Charsets.UTF_8.name()),
-                onBack = { navController.popBackStack() },
-            )
+            Box(modifier = Modifier.fillMaxSize()) {
+                IntegrationWebViewScreen(
+                    url = URLDecoder.decode(encodedUrl, Charsets.UTF_8.name()),
+                    onBack = { navController.popBackStack() },
+                )
+            }
         }
 
         composable(

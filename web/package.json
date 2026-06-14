@@ -25,6 +25,7 @@
     "verify:isolation": "tsx src/scripts/verify-isolation.ts",
     "verify:platform": "tsx src/scripts/verify-platform.ts",
     "setup:directus": "tsx src/scripts/setup-directus-tenants.ts",
+    "seed:directus": "tsx src/scripts/seed-directus-collections.ts",
     "verify:directus": "tsx src/scripts/verify-directus.ts"
   },
   "dependencies": {
