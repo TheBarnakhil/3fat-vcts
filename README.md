@@ -81,3 +81,26 @@ Demo credentials (after `pnpm db:seed`):
 | acme   | agent       | agent2@acme.test     | Passw0rd!  |
 | globex | super_admin | admin@globex.test    | Passw0rd!  |
 | globex | agent       | agent1@globex.test   | Passw0rd!  |
+
+## Directus CMS (Collection integration)
+
+Directus runs as a separate instance (not on Neon). The web app proxies tenant-scoped
+reads/writes through `/api/cms/*`; agents never hold Directus credentials except in
+WebView mode (admin-provided URL).
+
+From `web/` after copying `web/.env.example` Directus vars into `.env.local`:
+
+```bash
+pnpm setup:directus    # tenant policies + service tokens (paste output into env)
+pnpm seed:directus     # demo collections + sample rows per tenant
+pnpm verify:directus   # health, token CRUD, cross-tenant isolation
+```
+
+Sync Directus env vars to Vercel (after `vercel login`):
+
+```bash
+bash scripts/sync-directus-env-to-vercel.sh
+```
+
+Admin UI: **Collection integration** (WebView or offline JSON Schema). Schema reference:
+`docs/collection-integration-schemas.md`.

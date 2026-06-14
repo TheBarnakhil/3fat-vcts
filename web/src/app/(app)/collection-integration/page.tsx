@@ -226,7 +226,7 @@ export default function CollectionIntegrationPage() {
 						<TabsContent value="webview" className="mt-4 space-y-4">
 							<Field
 								label="Directus collection URL"
-								hint="Full URL the agent opens in a WebView. Must be reachable from the device and usable without extra auth (shareable/public form URL)."
+								hint="Full HTTPS URL opened in the Android WebView. Example: …/admin/content/t_<tenant>__products. HTTP only works when the app allows your Directus host; prefer HTTPS in production."
 							>
 								<Input
 									value={draft.webviewUrl}

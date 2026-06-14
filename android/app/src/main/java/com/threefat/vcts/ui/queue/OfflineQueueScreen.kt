@@ -43,6 +43,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.threefat.vcts.R
+import com.threefat.vcts.data.local.entity.SyncQueueEntity
 import com.threefat.vcts.domain.sync.SyncStatus
 import com.threefat.vcts.ui.theme.MonoFamily
 import java.text.DateFormat
@@ -57,8 +58,8 @@ import java.util.Date
  * doesn't fan out to dozens of POSTs.
  *
  * Permanently rejected rows, or rows that hit the retry ceiling, expose a
- * discard action that removes both the queue entry and the optimistic
- * local collection row.
+ * discard action. Collection rows also drop the optimistic local collection;
+ * CMS integration rows only remove the queue entry.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -101,7 +102,7 @@ private fun Body(
     padding: PaddingValues,
     state: OfflineQueueUiState,
     onRetryAll: () -> Unit,
-    onDiscard: (String) -> Unit,
+    onDiscard: (clientUuid: String, payloadType: String) -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -125,7 +126,10 @@ private fun Body(
             }
             LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 items(state.rows, key = { it.clientUuid }) { row ->
-                    QueueRowCard(row = row, onDiscard = { onDiscard(row.clientUuid) })
+                    QueueRowCard(
+                        row = row,
+                        onDiscard = { onDiscard(row.clientUuid, row.payloadType) },
+                    )
                 }
             }
         }
@@ -220,11 +224,18 @@ private fun QueueRowCard(row: OfflineQueueRow, onDiscard: () -> Unit) {
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        text = row.payloadType,
+                        text = queuePayloadLabel(row.payloadType),
                         style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     StatusChip(status = row.status)
+                }
+                row.cmsCollection?.let { collection ->
+                    Text(
+                        text = stringResource(R.string.queue_cms_collection, collection),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
                 }
                 Text(
                     text = row.clientUuid,
@@ -310,7 +321,7 @@ private fun StatusChip(status: SyncStatus) {
             MaterialTheme.colorScheme.onErrorContainer,
         )
         SyncStatus.SYNCED -> Triple(
-            "Synced",
+            stringResource(R.string.queue_status_synced),
             MaterialTheme.colorScheme.primaryContainer,
             MaterialTheme.colorScheme.onPrimaryContainer,
         )
@@ -331,4 +342,13 @@ private fun StatusChip(status: SyncStatus) {
 private fun formatTimestamp(epochMillis: Long): String {
     val fmt = DateFormat.getTimeInstance(DateFormat.SHORT)
     return fmt.format(Date(epochMillis))
+}
+
+@Composable
+private fun queuePayloadLabel(payloadType: String): String = when (payloadType) {
+    SyncQueueEntity.PAYLOAD_COLLECTION_CREATE ->
+        stringResource(R.string.queue_type_collection)
+    SyncQueueEntity.PAYLOAD_CMS_ITEM_CREATE ->
+        stringResource(R.string.queue_type_cms)
+    else -> payloadType
 }

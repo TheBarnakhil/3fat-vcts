@@ -104,7 +104,11 @@
     <!-- Offline queue (Phase 6) -->
     <string name="queue_title">Offline queue</string>
     <string name="queue_empty_title">Everything is synced</string>
-    <string name="queue_empty_subtitle">Submissions you make while offline will appear here until they reach the server.</string>
+    <string name="queue_empty_subtitle">Collections and integration responses you submit offline appear here until they reach the server.</string>
+    <string name="queue_type_collection">Collection submission</string>
+    <string name="queue_type_cms">Integration response</string>
+    <string name="queue_cms_collection">Directus collection: %1$s</string>
+    <string name="queue_status_synced">Synced</string>
     <string name="queue_status_pending">Pending</string>
     <string name="queue_status_in_flight">Syncing…</string>
     <string name="queue_status_failed">Failed</string>

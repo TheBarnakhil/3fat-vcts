@@ -6,6 +6,7 @@ import com.threefat.vcts.data.local.dao.CollectionDao
 import com.threefat.vcts.data.local.dao.SyncQueueDao
 import com.threefat.vcts.data.local.entity.SyncQueueEntity
 import com.threefat.vcts.data.preferences.AppPreferences
+import com.threefat.vcts.data.remote.dto.CmsItemQueueBody
 import com.threefat.vcts.domain.sync.SyncStatus
 import com.threefat.vcts.sync.SyncScheduler
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -15,12 +16,14 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.Json
 
 @HiltViewModel
 class OfflineQueueViewModel @Inject constructor(
     private val queueDao: SyncQueueDao,
     private val collectionDao: CollectionDao,
     private val syncScheduler: SyncScheduler,
+    private val json: Json,
     appPreferences: AppPreferences,
 ) : ViewModel() {
 
@@ -38,16 +41,19 @@ class OfflineQueueViewModel @Inject constructor(
         syncScheduler.requestImmediate()
     }
 
-    fun onDiscardClicked(clientUuid: String) {
+    fun onDiscardClicked(clientUuid: String, payloadType: String) {
         viewModelScope.launch {
             queueDao.delete(clientUuid)
-            collectionDao.deleteByClientUuid(clientUuid)
+            if (payloadType == SyncQueueEntity.PAYLOAD_COLLECTION_CREATE) {
+                collectionDao.deleteByClientUuid(clientUuid)
+            }
         }
     }
 
     private fun SyncQueueEntity.toUiRow(): OfflineQueueRow = OfflineQueueRow(
         clientUuid = clientUuid,
         payloadType = payloadType,
+        cmsCollection = parseCmsCollection(payloadType, body),
         status = SyncStatus.fromWire(status),
         attempts = attempts,
         lastErrorCode = lastErrorCode,
@@ -57,6 +63,13 @@ class OfflineQueueViewModel @Inject constructor(
         canDiscard = SyncStatus.fromWire(status) == SyncStatus.FAILED ||
             attempts >= MAX_ATTEMPTS,
     )
+
+    private fun parseCmsCollection(payloadType: String, body: String): String? {
+        if (payloadType != SyncQueueEntity.PAYLOAD_CMS_ITEM_CREATE) return null
+        return runCatching {
+            json.decodeFromString(CmsItemQueueBody.serializer(), body).collection
+        }.getOrNull()
+    }
 
     companion object {
         private const val MAX_ATTEMPTS = 10
@@ -76,6 +89,7 @@ data class OfflineQueueUiState(
 data class OfflineQueueRow(
     val clientUuid: String,
     val payloadType: String,
+    val cmsCollection: String? = null,
     val status: SyncStatus,
     val attempts: Int,
     val lastErrorCode: String?,
