@@ -6,6 +6,7 @@ import { LoaderCircle, Plug2, Save } from "lucide-react";
 import { toast } from "sonner";
 
 import { SchemaAuthoringGuide } from "@/components/cms/schema-authoring-guide";
+import { CmsApiDocs } from "@/components/cms/cms-api-docs";
 import { SchemaFormPreview } from "@/components/cms/schema-form-preview";
 import { PageHeader } from "@/components/shell/page-header";
 import { Button } from "@/components/ui/button";
@@ -237,6 +238,7 @@ export default function CollectionIntegrationPage() {
 									disabled={isReadonly}
 								/>
 							</Field>
+							<CmsApiDocs defaultCollection="products" className="mt-2" />
 						</TabsContent>
 
 						<TabsContent value="offline" className="mt-4 space-y-6">

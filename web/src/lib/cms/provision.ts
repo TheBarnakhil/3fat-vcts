@@ -90,7 +90,10 @@ async function findPolicyId(slug: string): Promise<string | null> {
 	return res.data[0]?.id ?? null;
 }
 
-async function ensurePermissions(slug: string, collection: string): Promise<void> {
+export async function ensureTenantCollectionPermissions(
+	slug: string,
+	collection: string,
+): Promise<void> {
 	const policyId = await findPolicyId(slug);
 	if (!policyId) return;
 
@@ -211,7 +214,7 @@ export async function provisionOfflineIntegration(
 			: buildDefaultUiSchema(jsonSchema);
 
 	await ensureCollection(slug, collection, jsonSchema);
-	await ensurePermissions(slug, collection);
+	await ensureTenantCollectionPermissions(slug, collection);
 
 	return {
 		collection: stripCollectionPrefix(slug, collection),
